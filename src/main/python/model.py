@@ -1,11 +1,9 @@
 import numpy as np
 
-
 T_BEGIN = 0
 T_END = 1
 PROJECT_ID = 2
 N_DONE = 3
-EMBEDDING_DIMS = ...
 
 
 def project_time_deltas(user_history):
@@ -48,27 +46,54 @@ def calc_lambdas(user, user_embedding, project_embeddings, beta, *, derivative=F
             yield numerator / denominator
 
 
-def log_likelihood(users, project_embeddings, user_embeddings, beta, eps):
-    ll = 0.
-    for user, user_embedding in zip(users, user_embeddings):
-        for lam, (delta_time, _) in zip(calc_lambdas(user, user_embedding, project_embeddings, beta),
-                                        project_time_deltas(user)):
-            ll += np.log(-(np.exp(-lam * (delta_time + eps)) - np.exp(-lam * (delta_time - eps))) / lam)
-    return ll
+class Model:
+    def __init__(self, users_history, embedding_dim, learning_rate=0.01, beta=0.01, eps=3600):
+        self.users_history = users_history
+        self.embedding_dim = embedding_dim
+        self.user_embeddings = {id: np.random.normal(0, 0.5, embedding_dim) for (id, user) in enumerate(users_history)}
+        project_count = max(max(project[PROJECT_ID] for project in user_history)
+                                for user_history in users_history)
+        self.project_embeddings = [np.random.normal(0, 0.5, embedding_dim) for _ in range(project_count)]
+        self.learning_rate = learning_rate
+        self.beta = beta
+        self.eps = eps
 
+    def log_likelihood(self):
+        ll = 0.
+        for user, user_embedding in zip(self.users_history, self.user_embeddings):
+            for lam, (delta_time, _) in zip(calc_lambdas(user, user_embedding, self.project_embeddings, self.beta),
+                                            project_time_deltas(user)):
+                ll += np.log(-(np.exp(-lam * (delta_time + self.eps)) - np.exp(-lam * (delta_time - self.eps))) / lam)
+        return ll
 
-def calc_derivative(users, project_embeddings, user_embeddings, beta, eps):
-    users_derivatives = []
-    project_derivatives = [np.zeros(EMBEDDING_DIMS) for _ in project_embeddings]
-    for user_history, user_embedding in zip(users, user_embeddings):
-        user_d = 0.
-        for (project_time_delta, project_id), (lam, lam_user_d, lam_project_d) in \
-                zip(project_time_deltas(user_history),
-                    calc_lambdas(user_history, user_embedding, project_embeddings, beta, derivative=True)):
-            cur_ll_d = -lam / (np.exp(-lam * (project_time_delta + eps)) - np.exp(-lam * (project_time_delta - eps))) \
-                       * ((1 / lam + project_time_delta + eps) * np.exp(-lam * (project_time_delta + eps))
-                          - (1 / lam + project_time_delta - eps) * np.exp(-lam * (project_time_delta - eps)))
-            user_d += cur_ll_d * lam_user_d
-            project_derivatives[project_id] += cur_ll_d * lam_project_d
-        users_derivatives.append(user_d)
-    return users_derivatives, project_derivatives
+    def calc_derivative(self):
+        users_derivatives = []
+        project_derivatives = [np.zeros(self.embedding_dim) for _ in self.project_embeddings]
+        for user_history, user_embedding in zip(self.users_history, self.user_embeddings):
+            user_d = 0.
+            for (project_time_delta, project_id), (lam, lam_user_d, lam_project_d) in \
+                    zip(project_time_deltas(user_history),
+                        calc_lambdas(user_history, user_embedding, self.project_embeddings, self.beta,
+                                     derivative=True)):
+                cur_ll_d = -lam / (
+                        np.exp(-lam * (project_time_delta + self.eps)) - np.exp(-lam * (project_time_delta - self.eps))) \
+                           * ((1 / lam + project_time_delta + self.eps) * np.exp(-lam * (project_time_delta + self.eps))
+                              - (1 / lam + project_time_delta - self.eps) * np.exp(
+                            -lam * (project_time_delta - self.eps)))
+                user_d += cur_ll_d * lam_user_d
+                project_derivatives[project_id] += cur_ll_d * lam_project_d
+            users_derivatives.append(user_d)
+        return users_derivatives, project_derivatives
+
+    def optimization_step(self):
+        users_derivatives, project_derivatives = self.calc_derivative()
+        for i in range(len(self.user_embeddings)):
+            self.user_embeddings[i] += self.learning_rate * users_derivatives[i]
+        for i in range(len(self.project_embeddings)):
+            self.project_embeddings[i] += self.learning_rate * project_derivatives[i]
+
+    def get_user_embeddings(self):
+        return self.user_embeddings
+
+    def get_project_embeddings(self):
+        return self.project_embeddings
