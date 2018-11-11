@@ -11,13 +11,13 @@ N_DONE = 3
 class LambdaCalculator:
     def __init__(self, beta, user_embedding, project_embeddings, derivative=False):
         self.numerator = 0
-        self.denominator = 0
+        self.denominator = 1e-9
         self.beta = beta
         self.user_embedding = user_embedding
         self.project_embeddings = project_embeddings
         self.derivative = derivative
         self.user_d_numerator = np.zeros(len(user_embedding))
-        self.project_d_numerator = None
+        self.project_d_numerators = np.zeros((len(project_embeddings), len(user_embedding)))
 
     def update(self, cur_step, delta_time, coefficient=1.):
         e = np.exp(-self.beta * delta_time)
@@ -26,15 +26,14 @@ class LambdaCalculator:
         self.denominator += coefficient * e
         if self.derivative:
             self.user_d_numerator += coefficient * e * cur_step[N_DONE] * self.project_embeddings[cur_step[PROJECT_ID]]
-            self.project_d_numerator = coefficient * e * cur_step[N_DONE] * self.user_embedding
+            self.project_d_numerators[cur_step[PROJECT_ID]] += coefficient * e * cur_step[N_DONE] * self.user_embedding
 
     def get(self):
         # TODO: find the default lambda
-        cur_lambda = 0. if self.denominator == 0. else self.numerator / self.denominator
+        cur_lambda = self.numerator / self.denominator
         if self.derivative:
-            # TODO: fix project derivatives
-            user_derivative = 0. if self.denominator == 0. else self.user_d_numerator / self.denominator
-            project_derivative = 0. if self.denominator == 0. else self.project_d_numerator / self.denominator
+            user_derivative = self.user_d_numerator / self.denominator
+            project_derivative = self.project_d_numerators / self.denominator
             return cur_lambda, user_derivative, project_derivative
         return cur_lambda
 
@@ -73,6 +72,7 @@ class Model:
                     delta_time = user_history[j][T_BEGIN] - user_history[i][T_END]
                     ll += np.log(-(np.exp(-cur_lambda * (delta_time + self.eps)) -
                                    np.exp(-cur_lambda * (delta_time - self.eps))) / cur_lambda)
+                    # TODO: consider updating lambdas after the return to the project
                     lambda_calculator.update(cur_step, delta_time)
                     for project_id, calculator in project_lambdas.items():
                         if project_id != cur_step[PROJECT_ID]:
@@ -87,7 +87,7 @@ class Model:
     # TODO: consider merging with calculating lambda
     def calc_derivative(self):
         users_derivatives = []
-        project_derivatives = [np.zeros(self.embedding_dim) for _ in self.project_embeddings]
+        project_derivatives = np.zeros((len(self.project_embeddings), self.embedding_dim))
         for user_history, user_embedding in zip(self.users_history, self.user_embeddings):
             user_d = 0.
             n = len(user_history)
@@ -97,7 +97,7 @@ class Model:
                     project_lambdas[cur_step[PROJECT_ID]] = \
                         LambdaCalculator(self.beta, user_embedding, self.project_embeddings, derivative=True)
                 lambda_calculator = project_lambdas[cur_step[PROJECT_ID]]
-                lam, lam_user_d, lam_project_d = lambda_calculator.get()
+                lam, lam_user_d, lam_projects_d = lambda_calculator.get()
                 j = i + 1
                 while j < n and user_history[j][PROJECT_ID] != user_history[i][PROJECT_ID]:
                     j += 1
@@ -108,7 +108,7 @@ class Model:
                         ((1 / lam + delta_time + self.eps) * np.exp(-lam * (delta_time + self.eps)) -
                             (1 / lam + delta_time - self.eps) * np.exp(-lam * (delta_time - self.eps)))
                     user_d += cur_ll_d * lam_user_d
-                    project_derivatives[cur_step[PROJECT_ID]] += cur_ll_d * lam_project_d
+                    project_derivatives += cur_ll_d * lam_projects_d
                     lambda_calculator.update(cur_step, delta_time)
                     for project_id, calculator in project_lambdas.items():
                         if project_id != cur_step[PROJECT_ID]:
@@ -120,7 +120,7 @@ class Model:
                     # cur_ll_d = (lam ** -2 * (np.exp(-lam * final_t) - 1) - final_t * np.exp(-lam * final_t) / lam) / \
                     #            (1 + (np.exp(lam * ...) - 1) / lam)
                     # user_d += cur_ll_d * lam_user_d
-                    # project_derivatives[cur_step[PROJECT_ID]] += cur_ll_d * lam_project_d
+                    # project_derivatives[cur_step[PROJECT_ID]] += cur_ll_d * lam_projects_d
             users_derivatives.append(user_d)
         return users_derivatives, project_derivatives
 
