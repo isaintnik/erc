@@ -16,7 +16,7 @@ class LambdaCalculator:
         self.user_embedding = user_embedding
         self.project_embeddings = project_embeddings
         self.derivative = derivative
-        self.user_d_numerator = np.zeros(len(user_embedding))
+        self.user_d_numerator = np.zeros_like(user_embedding)
         self.project_d_numerators = np.zeros((len(project_embeddings), len(user_embedding)))
 
     def update(self, cur_step, delta_time, coefficient=1.):
@@ -43,12 +43,11 @@ class Model:
                  external_lambda_coefficient=0.5):
         self.users_history = users_history
         self.embedding_dim = dimensionality
-        self.user_embeddings = {ind: np.random.normal(0, 0.5, dimensionality) for
+        self.user_embeddings = {ind: np.random.normal(0, 1, dimensionality) for
                                 (ind, user) in enumerate(users_history)}
         project_count = max(
-            max(project[PROJECT_ID] for project in user_history) for user_history in users_history
-        )
-        self.project_embeddings = [np.random.normal(0, 0.5, dimensionality) for _ in range(project_count)]
+            max(project[PROJECT_ID] for project in user_history) for user_history in users_history) + 1
+        self.project_embeddings = [np.random.normal(0, 1, dimensionality) for _ in range(project_count)]
         self.learning_rate = learning_rate
         self.beta = beta
         self.eps = eps
@@ -89,7 +88,7 @@ class Model:
         users_derivatives = []
         project_derivatives = np.zeros((len(self.project_embeddings), self.embedding_dim))
         for user_history, user_embedding in zip(self.users_history, self.user_embeddings.values()):
-            user_d = 0.
+            user_d = np.zeros_like(user_embedding)
             n = len(user_history)
             project_lambdas = {}
             for i, cur_step in enumerate(user_history):
