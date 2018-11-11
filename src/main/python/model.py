@@ -10,7 +10,7 @@ N_DONE = 3
 
 class LambdaCalculator:
     def __init__(self, beta, user_embedding, project_embeddings, derivative=False):
-        self.numerator = 0
+        self.numerator = 1e-18
         self.denominator = 1e-9
         self.beta = beta
         self.user_embedding = user_embedding
@@ -56,7 +56,7 @@ class Model:
 
     def log_likelihood(self):
         ll = 0.
-        for user_history, user_embedding in zip(self.users_history, self.user_embeddings):
+        for user_history, user_embedding in zip(self.users_history, self.user_embeddings.values()):
             n = len(user_history)
             project_lambdas = {}
             for i, cur_step in enumerate(user_history):
@@ -88,7 +88,7 @@ class Model:
     def calc_derivative(self):
         users_derivatives = []
         project_derivatives = np.zeros((len(self.project_embeddings), self.embedding_dim))
-        for user_history, user_embedding in zip(self.users_history, self.user_embeddings):
+        for user_history, user_embedding in zip(self.users_history, self.user_embeddings.values()):
             user_d = 0.
             n = len(user_history)
             project_lambdas = {}
