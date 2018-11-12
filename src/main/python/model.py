@@ -75,12 +75,12 @@ class Model:
         self.eps = eps
         self.other_project_importance = other_project_importance
 
-        self.user_embeddings = np.array([np.random.normal(0, 1, self.emb_dim) for _ in range(len(self.users_history))])
+        self.user_embeddings = np.array([np.random.normal(0, 0.51, self.emb_dim) for _ in range(len(self.users_history))])
         projects_set = set()
         for user_history in self.users_history:
             for session in user_history:
                 projects_set.add(session.pid)
-        self.project_embeddings = np.array([np.random.normal(0, 1, self.emb_dim) for _ in range(len(projects_set))])
+        self.project_embeddings = np.array([np.random.normal(0, 0.51, self.emb_dim) for _ in range(len(projects_set))])
         # self.init_user_embeddings()
         # self.init_project_embeddings()
 
@@ -148,18 +148,21 @@ class Model:
     def _session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
         lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
         tau = user_session.pr_delta
+        # print("lambda")
+        # print(lam, tau + self.eps)
+        # print(-lam * (tau + self.eps))
         cur_ll_d = -((1 / lam + tau + self.eps) * np.exp(-lam * (tau + self.eps)) -
                      (1 / lam + tau - self.eps) * np.exp(-lam * (tau - self.eps))) / \
                     (np.exp(-lam * (tau + self.eps)) - np.exp(-lam * (tau - self.eps)))
         users_derivatives[user_id] += cur_ll_d * lam_user_d
-        project_derivatives += cur_ll_d * lam_projects_d
+        project_derivatives[user_session.pid] += cur_ll_d * lam_projects_d
 
     def _last_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
         lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
         tau = user_session.pr_delta
         cur_ll_d = -((tau - 1 / lam) * np.exp(-lam * tau) + 1 / lam) / (lam + np.exp(-lam * tau) - 1)
         users_derivatives[user_id] += cur_ll_d * lam_user_d
-        project_derivatives += cur_ll_d * lam_projects_d
+        project_derivatives[user_session.pid] += cur_ll_d * lam_projects_d
 
     def optimization_step(self):
         users_derivatives, project_derivatives = self.ll_derivative()
