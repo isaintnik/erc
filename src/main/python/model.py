@@ -1,130 +1,168 @@
+import copy
 import numpy as np
-
+from collections import namedtuple
 
 # TODO: switch from tuples to named tuples
 T_BEGIN = 0
 T_END = 1
 PROJECT_ID = 2
 N_DONE = 3
+now_ts = 1541019601  # 2018-11-01 00:00:01
+
+USession = namedtuple('USession', 'pid start_ts end_ts pr_delta n_tasks')
 
 
-class LambdaCalculator:
-    def __init__(self, beta, user_embedding, project_embeddings, derivative=False):
-        self.numerator = 1e-18
-        self.denominator = 1e-9
+class UserProjectLambda:
+    def __init__(self, user_embedding, beta):
+        self.numerator = 1
+        self.denominator = 1
         self.beta = beta
         self.user_embedding = user_embedding
-        self.project_embeddings = project_embeddings
-        self.derivative = derivative
         self.user_d_numerator = np.zeros_like(user_embedding)
-        self.project_d_numerators = np.zeros((len(project_embeddings), len(user_embedding)))
+        self.project_d_numerators = np.zeros(user_embedding.shape)
 
-    def update(self, cur_step, delta_time, coefficient=1.):
+    def update(self, project_embedding, n_tasks, delta_time, coeff, derivative=True):
         e = np.exp(-self.beta * delta_time)
-        self.numerator += coefficient * e * cur_step[N_DONE] * \
-            (self.user_embedding @ self.project_embeddings[cur_step[PROJECT_ID]])
-        self.denominator += coefficient * e
-        if self.derivative:
-            self.user_d_numerator += coefficient * e * cur_step[N_DONE] * self.project_embeddings[cur_step[PROJECT_ID]]
-            self.project_d_numerators[cur_step[PROJECT_ID]] += coefficient * e * cur_step[N_DONE] * self.user_embedding
+        ua = (self.user_embedding @ project_embedding)
+        self.numerator = e * self.numerator + coeff * n_tasks * ua * ua
+        self.denominator = e * self.denominator + coeff
+        if derivative:
+            self.user_d_numerator = e * self.user_d_numerator + coeff * n_tasks * \
+                                    2 * ua * project_embedding
+            self.project_d_numerators = e * self.project_d_numerators + coeff * n_tasks * \
+                                        2 * ua * self.user_embedding
 
-    def get(self):
-        # TODO: find the default lambda
+    def get(self, derivative=False):
         cur_lambda = self.numerator / self.denominator
-        if self.derivative:
+        if derivative:
             user_derivative = self.user_d_numerator / self.denominator
             project_derivative = self.project_d_numerators / self.denominator
             return cur_lambda, user_derivative, project_derivative
         return cur_lambda
 
 
+class UserLambda:
+    def __init__(self, user_embedding, project_embeddings, beta, other_project_importance):
+        self.project_lambdas = {}
+        self.beta = beta
+        self.other_project_importance = other_project_importance
+        self.user_embedding = user_embedding
+        self.project_embeddings = project_embeddings
+        self.default_lambda = UserProjectLambda(self.user_embedding, self.beta)
+
+    def update(self, session, delta_time, derivative=True):
+        if session.pid not in self.project_lambdas:
+            self.project_lambdas[session.pid] = copy.deepcopy(self.default_lambda)
+        for project_id in self.project_lambdas.keys():
+            coeff = 1 if project_id == session.pid else self.other_project_importance
+            self.project_lambdas[session.pid].update(self.project_embeddings[project_id], session.n_tasks, delta_time,
+                                                     coeff, derivative)
+            self.default_lambda.update(self.project_embeddings[project_id], session.n_tasks, delta_time,
+                                       self.other_project_importance, derivative)
+
+    def get(self, project_id, derivative=False):
+        if project_id not in self.project_lambdas.keys():
+            return self.default_lambda.get(derivative)
+        return self.project_lambdas[project_id].get(derivative)
+
+
 class Model:
-    def __init__(self, users_history, dimensionality, learning_rate=0.01, beta=0.01, eps=3600,
-                 external_lambda_coefficient=0.5):
+    def __init__(self, users_history, dim, learning_rate=0.01, beta=0.01, eps=3600, other_project_importance=0.5):
         self.users_history = users_history
-        self.embedding_dim = dimensionality
-        self.user_embeddings = {ind: np.random.normal(0, 1, dimensionality) for
-                                (ind, user) in enumerate(users_history)}
-        project_count = max(
-            max(project[PROJECT_ID] for project in user_history) for user_history in users_history) + 1
-        self.project_embeddings = [np.random.normal(0, 1, dimensionality) for _ in range(project_count)]
+        self.emb_dim = dim
         self.learning_rate = learning_rate
         self.beta = beta
         self.eps = eps
-        self.external_lambda_coefficient = external_lambda_coefficient
+        self.other_project_importance = other_project_importance
+
+        self.user_embeddings = np.array([np.random.normal(0, 1, self.emb_dim) for _ in range(len(self.users_history))])
+        projects_set = set()
+        for user_history in self.users_history:
+            for session in user_history:
+                projects_set.add(session.pid)
+        self.project_embeddings = np.array([np.random.normal(0, 1, self.emb_dim) for _ in range(len(projects_set))])
+        # self.init_user_embeddings()
+        # self.init_project_embeddings()
+
+    def init_user_embeddings(self):
+        self.user_embeddings = np.array([np.random.normal(0, 1, self.emb_dim) for _ in range(len(self.users_history))])
+
+    def init_project_embeddings(self):
+        projects_set = set()
+        for user_history in self.users_history:
+            for session in user_history:
+                projects_set.add(session.pid)
+        self.project_embeddings = np.array([np.random.normal(0, 1, self.emb_dim) for _ in range(len(projects_set))])
 
     def log_likelihood(self):
+        return self._likelihood_derivative()
+
+    def ll_derivative(self):
+        return self._likelihood_derivative(derivative=True)
+
+    def _likelihood_derivative(self, derivative=False):
         ll = 0.
-        for user_history, user_embedding in zip(self.users_history, self.user_embeddings.values()):
-            n = len(user_history)
-            project_lambdas = {}
-            for i, cur_step in enumerate(user_history):
-                if cur_step[PROJECT_ID] not in project_lambdas:
-                    project_lambdas[cur_step[PROJECT_ID]] = \
-                        LambdaCalculator(self.beta, user_embedding, self.project_embeddings)
-                lambda_calculator = project_lambdas[cur_step[PROJECT_ID]]
-                cur_lambda = lambda_calculator.get()
-                j = i + 1
-                while j < n and user_history[j][PROJECT_ID] != user_history[i][PROJECT_ID]:
-                    j += 1
-                if j < n:
-                    delta_time = user_history[j][T_BEGIN] - user_history[i][T_END]
-                    ll += np.log(-(np.exp(-cur_lambda * (delta_time + self.eps)) -
-                                   np.exp(-cur_lambda * (delta_time - self.eps))) / cur_lambda)
-                    # TODO: consider updating lambdas after the return to the project
-                    lambda_calculator.update(cur_step, delta_time)
-                    for project_id, calculator in project_lambdas.items():
-                        if project_id != cur_step[PROJECT_ID]:
-                            calculator.update(cur_step, delta_time, self.external_lambda_coefficient)
+        users_derivatives = np.zeros(self.user_embeddings.shape)
+        project_derivatives = np.zeros(self.project_embeddings.shape)
+        for user_id in range(len(self.users_history)):
+            user_history = self.users_history[user_id]
+            user_lambda = UserLambda(self.user_embeddings[user_id], self.project_embeddings,
+                                     self.beta, self.other_project_importance)
+            done_projects = set()
+            last_times_sessions = set()
+            for i, user_session in enumerate(user_history):
+                # first time done projects tasks, skip ll update
+                if user_session.pid not in done_projects:
+                    done_projects.add(user_session.pid)
+                    if i > 0:
+                        user_lambda.update(user_session, user_session.start_ts - user_history[i - 1].start_ts)
+                    continue
+
+                if user_session.n_tasks != 0:
+                    if derivative:
+                        self._session_derivative(user_session, user_id, user_lambda, users_derivatives, project_derivatives)
+                    else:
+                        ll += self._session_likelihood(user_session, user_lambda)
+                    user_lambda.update(user_session, user_session.start_ts - user_history[i - 1].start_ts)
                 else:
-                    pass
-                    # TODO: use the time to logs snapshot
-                    # final_t = ...
-                    # ll += np.log(1 + (np.exp(cur_lambda * final_t) - 1) / cur_lambda)
+                    last_times_sessions.add(user_session)
+
+            for user_session in last_times_sessions:
+                if derivative:
+                    self._last_derivative(user_session, user_id, user_lambda, users_derivatives, project_derivatives)
+                else:
+                    ll += self._last_likelihood(user_session, user_lambda)
+        if derivative:
+            return users_derivatives, project_derivatives
         return ll
 
-    # TODO: consider merging with calculating lambda
-    def calc_derivative(self):
-        users_derivatives = []
-        project_derivatives = np.zeros((len(self.project_embeddings), self.embedding_dim))
-        for user_history, user_embedding in zip(self.users_history, self.user_embeddings.values()):
-            user_d = np.zeros_like(user_embedding)
-            n = len(user_history)
-            project_lambdas = {}
-            for i, cur_step in enumerate(user_history):
-                if cur_step[PROJECT_ID] not in project_lambdas:
-                    project_lambdas[cur_step[PROJECT_ID]] = \
-                        LambdaCalculator(self.beta, user_embedding, self.project_embeddings, derivative=True)
-                lambda_calculator = project_lambdas[cur_step[PROJECT_ID]]
-                lam, lam_user_d, lam_projects_d = lambda_calculator.get()
-                j = i + 1
-                while j < n and user_history[j][PROJECT_ID] != user_history[i][PROJECT_ID]:
-                    j += 1
-                if j < n:
-                    delta_time = user_history[j][T_BEGIN] - user_history[i][T_END]
-                    cur_ll_d = -lam / \
-                        (np.exp(-lam * (delta_time + self.eps)) - np.exp(-lam * (delta_time - self.eps))) * \
-                        ((1 / lam + delta_time + self.eps) * np.exp(-lam * (delta_time + self.eps)) -
-                            (1 / lam + delta_time - self.eps) * np.exp(-lam * (delta_time - self.eps)))
-                    user_d += cur_ll_d * lam_user_d
-                    project_derivatives += cur_ll_d * lam_projects_d
-                    lambda_calculator.update(cur_step, delta_time)
-                    for project_id, calculator in project_lambdas.items():
-                        if project_id != cur_step[PROJECT_ID]:
-                            calculator.update(cur_step, delta_time, self.external_lambda_coefficient)
-                else:
-                    pass
-                    # TODO: use the time to logs snapshot
-                    # final_t = ...
-                    # cur_ll_d = (lam ** -2 * (np.exp(-lam * final_t) - 1) - final_t * np.exp(-lam * final_t) / lam) / \
-                    #            (1 + (np.exp(lam * ...) - 1) / lam)
-                    # user_d += cur_ll_d * lam_user_d
-                    # project_derivatives[cur_step[PROJECT_ID]] += cur_ll_d * lam_projects_d
-            users_derivatives.append(user_d)
-        return users_derivatives, project_derivatives
+    def _session_likelihood(self, user_session, user_lambda):
+        cur_lambda = user_lambda.get(user_session.pid)
+        return np.log(-(np.exp(-cur_lambda * (user_session.pr_delta + self.eps)) -
+                       np.exp(-cur_lambda * (user_session.pr_delta - self.eps))) / cur_lambda)
+
+    def _last_likelihood(self, user_session, user_lambda):
+        cur_lambda = user_lambda.get(user_session.pid)
+        return np.log(1. + (np.exp(-cur_lambda * user_session.pr_delta) - 1) / cur_lambda)
+
+    def _session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
+        lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
+        tau = user_session.pr_delta
+        cur_ll_d = -((1 / lam + tau + self.eps) * np.exp(-lam * (tau + self.eps)) -
+                     (1 / lam + tau - self.eps) * np.exp(-lam * (tau - self.eps))) / \
+                    (np.exp(-lam * (tau + self.eps)) - np.exp(-lam * (tau - self.eps)))
+        users_derivatives[user_id] += cur_ll_d * lam_user_d
+        project_derivatives += cur_ll_d * lam_projects_d
+
+    def _last_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
+        lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
+        tau = user_session.pr_delta
+        cur_ll_d = -((tau - 1 / lam) * np.exp(-lam * tau) + 1 / lam) / (lam + np.exp(-lam * tau) - 1)
+        users_derivatives[user_id] += cur_ll_d * lam_user_d
+        project_derivatives += cur_ll_d * lam_projects_d
 
     def optimization_step(self):
-        users_derivatives, project_derivatives = self.calc_derivative()
+        users_derivatives, project_derivatives = self.ll_derivative()
         for i in range(len(self.user_embeddings)):
             self.user_embeddings[i] += self.learning_rate * users_derivatives[i]
         for i in range(len(self.project_embeddings)):

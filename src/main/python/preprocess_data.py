@@ -96,3 +96,13 @@ def process_data_stream(worker_id, rows):
             'inner_delta': project_inner_delta[
                 prev_row.project_id] if prev_row.project_id in project_inner_delta else None
         }
+
+    for project_id in project_inner_delta.keys():
+        yield {
+            'worker_id': worker_id,
+            'project_id': project_id,
+            'start_ts': None,
+            'end_ts': None,
+            'n_tasks': 0,
+            'inner_delta': project_inner_delta[project_id]
+        }

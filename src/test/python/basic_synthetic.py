@@ -1,9 +1,14 @@
 import numpy as np
-from src.main.python.model import Model
+from src.main.python.model import Model, USession
 
 
 def generate_synthetic(users, projects):
-    return [[(0, 0, 0, 0) for _ in range(3)] for _ in range(len(users))]
+    return [
+        [USession(0, 10, 15, None, 10), USession(1, 16, 18, None, 5),
+         USession(2, 25, 30, None, 10)],
+        [USession(2, 10, 16, None, 8), USession(0, 20, 28, None, 16),
+         USession(2, 36, 40, 10, 8), USession(2, 48, 60, 50, 24)]
+    ]
 
 
 def generate_vectors(users_num, projects_num, dim, std_dev=0.2):
@@ -18,27 +23,20 @@ def vecs_dist(vecs1, vecs2):
     return sum
 
 
-def test_correct_derivative():
-    users_num = 2
-    projects_num = 2
-    dim = 2
-    users, projects = generate_vectors(users_num, projects_num, dim)
-    users_history = generate_synthetic(users, projects)
-    model = Model(users_history, dim, learning_rate=0.01)
-    user_embeddings1 = model.get_user_embeddings()
-    project_embeddings1 = model.get_project_embeddings()
-    users_derivatives, project_derivatives = model.calc_derivative()
-    users_delta = [0.001 * (user - user_embedding) for user, user_embedding
-                   in zip(users, user_embeddings1)]
-    projects_delta = [0.001 * (project - project_embedding) for project, project_embedding
-                      in zip(projects, project_embeddings1)]
-    for (user_derivative, user_delta) in zip(users_derivatives, users_delta):
-        assert np.abs(user_derivative - user_delta) < 0.0001
-    for (project_derivative, project_delta) in zip(project_derivatives, projects_delta):
-        assert np.abs(project_derivative - project_delta) < 0.0001
+def correct_test():
+    m = Model(generate_synthetic(None, None), 2, eps=10)
+    log_likelihood = m.log_likelihood()
+    print(log_likelihood)
+    user_derivatives, project_derivatives = m.ll_derivative()
+    print(user_derivatives)
+    print(project_derivatives)
+    m.user_embeddings += np.ones_like(m.user_embeddings) * 0.0001
+    second_log_likelihood = m.log_likelihood()
+    print(second_log_likelihood)
+    print(second_log_likelihood - log_likelihood)
 
 
-def test_convergence():
+def convergence_test():
     users_num = 2
     projects_num = 2
     dim = 2
@@ -53,3 +51,7 @@ def test_convergence():
 
     assert vecs_dist(model.get_user_embeddings(), users) < 0.1
     assert vecs_dist(model.get_project_embeddings(), projects) < 0.1
+
+
+if __name__ == "__main__":
+    correct_test()
