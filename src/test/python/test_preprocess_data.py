@@ -41,14 +41,20 @@ def test_process_data_stream():
         Row("pid2", 25, 26, "res"),
 
         # 4
-        Row("pid4", 27, 28, "ep"),
+        Row("pid4", 28, 29, "ep"),
 
-        Row("pid4", 28, 29, "res")
+        Row("pid4", 29, 30, "res"),
+
+        Row("pid4", 32, 33, "ep"),
+        Row("pid2", 32, 33, "ep"),
+
+        Row("pid4", 35, 36, "ep")
     ]
     result = list(process_data_stream(worker_id, data))
+    print(result)
 
     # 4 sessions
-    assert len(result) == 4
+    assert len(result) == 5
 
     # first time doing this project
     assert {'worker_id': "wid", 'project_id': "pid2", 'start_ts': 3, 'end_ts': 11,
@@ -63,5 +69,13 @@ def test_process_data_stream():
             'n_tasks': 2, 'inner_delta': 2} in result
 
     # first time doing this project
-    assert {'worker_id': "wid", 'project_id': "pid4", 'start_ts': 28, 'end_ts': 29,
+    assert {'worker_id': "wid", 'project_id': "pid4", 'start_ts': 29, 'end_ts': 30,
             'n_tasks': 1, 'inner_delta': None} in result
+
+    assert {'worker_id': 'wid', 'project_id': 'pid2', 'start_ts': 31, 'end_ts': 31,
+            'n_tasks': 0, 'inner_delta': 2} in result
+
+
+if __name__ == "__main__":
+    test_process_data_stream()
+

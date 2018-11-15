@@ -10,21 +10,43 @@ def update_projects_time(project_last_seen_ts, project_inner_delta, project_last
         if project_id not in project_last_time_done_ts:
             project_last_time_done_ts[project_id] = None
 
-    for project_id in project_last_seen_ts.keys():
-        if project_id in last_time_projects:
-            if project_last_seen_ts[project_id] is not None and project_last_time_done_ts[project_id] is not None:
+    # both ways is okay but have some difference
+    # on large data It doesn't matter which function to use
+    _update_projects_time1(project_last_seen_ts, project_inner_delta, project_last_time_done_ts, last_time_projects,
+                           current_ts)
+    # _update_projects_time2(project_last_seen_ts, project_inner_delta, project_last_time_done_ts, last_time_projects,
+    #                        current_ts)
+
+
+def _update_projects_time1(project_last_seen_ts, project_inner_delta, project_last_time_done_ts, last_time_projects,
+                           current_ts):
+    for project_id in project_last_seen_ts:
+        if project_last_seen_ts[project_id] is not None and project_last_time_done_ts[project_id] is not None:
+            if project_inner_delta[project_id] is None:
+                project_inner_delta[project_id] = 0
+            project_inner_delta[project_id] += current_ts - max(project_last_seen_ts[project_id],
+                                                                project_last_time_done_ts[project_id])
+        project_last_seen_ts[project_id] = current_ts if project_id in last_time_projects else None
+
+
+def _update_projects_time2(project_last_seen_ts, project_inner_delta, project_last_time_done_ts, last_time_projects,
+                           current_ts):
+    for project_id in project_last_seen_ts:
+        if project_last_time_done_ts[project_id] is not None:
+            if project_last_seen_ts[project_id] is not None:
                 if project_inner_delta[project_id] is None:
                     project_inner_delta[project_id] = 0
-                project_inner_delta[project_id] += current_ts - max(project_last_seen_ts[project_id],
-                                                                    project_last_time_done_ts[project_id])
-            project_last_seen_ts[project_id] = current_ts
+                if project_last_seen_ts[project_id] < project_last_time_done_ts[project_id]:
+                    project_inner_delta[project_id] = 0
+                else:
+                    project_inner_delta[project_id] += current_ts - max(project_last_seen_ts[project_id],
+                                                                        project_last_time_done_ts[project_id])
+            else:
+                if project_inner_delta[project_id] is None:
+                    project_inner_delta[project_id] = 0
         else:
-            if project_last_seen_ts[project_id] is not None and project_last_time_done_ts[project_id] is not None:
-                if project_inner_delta[project_id] is None:
-                    project_inner_delta[project_id] = 0
-                project_inner_delta[project_id] += current_ts - max(project_last_seen_ts[project_id],
-                                                                    project_last_time_done_ts[project_id])
-            project_last_seen_ts[project_id] = None
+            project_inner_delta[project_id] = None
+        project_last_seen_ts[project_id] = current_ts if project_id in last_time_projects else None
 
 
 def process_data_stream(worker_id, rows):
@@ -86,7 +108,7 @@ def process_data_stream(worker_id, rows):
 
         prev_row = row
 
-    if prev_row.action_type == "res":
+    if prev_row is not None and prev_row.action_type == "res":
         yield {
             'worker_id': worker_id,
             'project_id': prev_row.project_id,
@@ -97,12 +119,20 @@ def process_data_stream(worker_id, rows):
                 prev_row.project_id] if prev_row.project_id in project_inner_delta else None
         }
 
-    for project_id in project_inner_delta.keys():
-        yield {
-            'worker_id': worker_id,
-            'project_id': project_id,
-            'start_ts': None,
-            'end_ts': None,
-            'n_tasks': 0,
-            'inner_delta': project_inner_delta[project_id]
-        }
+    if last_main_page_rows:
+        update_projects_time(project_last_seen_ts, project_inner_delta, project_last_time_done_ts,
+                             last_main_page_rows, last_main_page_ts)
+    if prev_row is not None:
+        now_ts = prev_row.next_ts + 1
+    else:
+        now_ts = None
+    for project_id in project_inner_delta:
+        if project_inner_delta[project_id] is not None:
+            yield {
+                'worker_id': worker_id,
+                'project_id': project_id,
+                'start_ts': now_ts,
+                'end_ts': now_ts,
+                'n_tasks': 0,
+                'inner_delta': project_inner_delta[project_id]
+            }
