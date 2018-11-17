@@ -1,5 +1,4 @@
-import numpy as np
-from src.main.python.model import Model, USession
+from src.main.python.model import *
 
 
 def generate_synthetic(users, projects):
@@ -76,7 +75,8 @@ def convergence_test():
     dim = 3
     users, projects = generate_vectors(users_num, projects_num, dim)
     users_history = generate_synthetic(users, projects)
-    model = Model(users_history, dim, learning_rate=0.003, eps=10)
+    # model = Model2UA(users_history, dim, learning_rate=0.003, eps=10)
+    model = Model2Lambda(users_history, dim, learning_rate=0.003, eps=10)
     for i in range(100):
         if i % 5 == 0:
             print("{}-th iter, ll = {}".format(i, model.log_likelihood()))

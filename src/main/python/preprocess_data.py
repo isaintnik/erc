@@ -11,11 +11,12 @@ def update_projects_time(project_last_seen_ts, project_inner_delta, project_last
             project_last_time_done_ts[project_id] = None
 
     # both ways is okay but have some difference
-    # on large data It doesn't matter which function to use
-    _update_projects_time1(project_last_seen_ts, project_inner_delta, project_last_time_done_ts, last_time_projects,
-                           current_ts)
-    # _update_projects_time2(project_last_seen_ts, project_inner_delta, project_last_time_done_ts, last_time_projects,
+    # on large data it doesn't matter which function to use
+    # upd: _update_projects_time1 get negative inner_delta, use _update_projects_time2
+    # _update_projects_time1(project_last_seen_ts, project_inner_delta, project_last_time_done_ts, last_time_projects,
     #                        current_ts)
+    _update_projects_time2(project_last_seen_ts, project_inner_delta, project_last_time_done_ts, last_time_projects,
+                           current_ts)
 
 
 def _update_projects_time1(project_last_seen_ts, project_inner_delta, project_last_time_done_ts, last_time_projects,
@@ -136,3 +137,17 @@ def process_data_stream(worker_id, rows):
                 'n_tasks': 0,
                 'inner_delta': project_inner_delta[project_id]
             }
+
+
+def union_in_project_session(worker_id, rows):
+    prev_row = None
+    current_row = None
+    for row in rows:
+        if prev_row is not None and prev_row.project_id == row.project_id \
+                and row.start_ts - prev_row.end_ts < 60:
+            current_row.end_ts = row.end_ts
+            current_row.inner_delta += row.inner_delta
+            current_row.n_tasks += row.n_tasks
+        else:
+            current_row = row
+

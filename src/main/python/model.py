@@ -13,10 +13,11 @@ USession = namedtuple('USession', 'pid start_ts end_ts pr_delta n_tasks')
 
 
 class UserProjectLambda:
-    def __init__(self, user_embedding, beta):
+    def __init__(self, user_embedding, beta, square=False):
         self.numerator = 1
         self.denominator = 1
         self.beta = beta
+        self.square = square
         self.user_embedding = user_embedding
         self.user_d_numerator = np.zeros_like(user_embedding)
         self.project_d_numerators = np.zeros(user_embedding.shape)
@@ -24,13 +25,13 @@ class UserProjectLambda:
     def update(self, project_embedding, n_tasks, delta_time, coeff, derivative=True):
         e = np.exp(-self.beta * delta_time)
         ua = (self.user_embedding @ project_embedding)
-        self.numerator = e * self.numerator + coeff * n_tasks * ua * ua
+        self.numerator = e * self.numerator + coeff * n_tasks * ua * (ua if self.square else 1)
         self.denominator = e * self.denominator + coeff
         if derivative:
             self.user_d_numerator = e * self.user_d_numerator + coeff * n_tasks * \
-                                    2 * ua * project_embedding
+                                    project_embedding * (2 * ua if self.square else 1)
             self.project_d_numerators = e * self.project_d_numerators + coeff * n_tasks * \
-                                        2 * ua * self.user_embedding
+                                        self.user_embedding * (2 * ua if self.square else 1)
 
     def get(self, derivative=False):
         cur_lambda = self.numerator / self.denominator
@@ -42,13 +43,13 @@ class UserProjectLambda:
 
 
 class UserLambda:
-    def __init__(self, user_embedding, project_embeddings, beta, other_project_importance):
+    def __init__(self, user_embedding, project_embeddings, beta, other_project_importance, square=False):
         self.project_lambdas = {}
         self.beta = beta
         self.other_project_importance = other_project_importance
         self.user_embedding = user_embedding
         self.project_embeddings = project_embeddings
-        self.default_lambda = UserProjectLambda(self.user_embedding, self.beta)
+        self.default_lambda = UserProjectLambda(self.user_embedding, self.beta, square)
 
     def update(self, session, delta_time, derivative=True):
         if session.pid not in self.project_lambdas:
@@ -73,9 +74,11 @@ class Model:
         self.learning_rate = learning_rate
         self.beta = beta
         self.eps = eps
+        self.type = 0
         self.other_project_importance = other_project_importance
 
-        self.user_embeddings = np.array([np.random.normal(0, 0.51, self.emb_dim) for _ in range(len(self.users_history))])
+        self.user_embeddings = np.array(
+            [np.random.normal(0, 0.51, self.emb_dim) for _ in range(len(self.users_history))])
         projects_set = set()
         for user_history in self.users_history:
             for session in user_history:
@@ -107,7 +110,7 @@ class Model:
         for user_id in range(len(self.users_history)):
             user_history = self.users_history[user_id]
             user_lambda = UserLambda(self.user_embeddings[user_id], self.project_embeddings,
-                                     self.beta, self.other_project_importance)
+                                     self.beta, self.other_project_importance, self.type == 0)
             done_projects = set()
             last_times_sessions = set()
             for i, user_session in enumerate(user_history):
@@ -120,7 +123,8 @@ class Model:
 
                 if user_session.n_tasks != 0:
                     if derivative:
-                        self._session_derivative(user_session, user_id, user_lambda, users_derivatives, project_derivatives)
+                        self._session_derivative(user_session, user_id, user_lambda, users_derivatives,
+                                                 project_derivatives)
                     else:
                         ll += self._session_likelihood(user_session, user_lambda)
                     user_lambda.update(user_session, user_session.start_ts - user_history[i - 1].start_ts)
@@ -136,33 +140,30 @@ class Model:
             return users_derivatives, project_derivatives
         return ll
 
-    def _session_likelihood(self, user_session, user_lambda):
-        cur_lambda = user_lambda.get(user_session.pid)
-        return np.log(-(np.exp(-cur_lambda * (user_session.pr_delta + self.eps)) -
-                       np.exp(-cur_lambda * (user_session.pr_delta - self.eps))) / cur_lambda)
-
-    def _last_likelihood(self, user_session, user_lambda):
-        cur_lambda = user_lambda.get(user_session.pid)
-        return np.log(1. + (np.exp(-cur_lambda * user_session.pr_delta) - 1) / cur_lambda)
-
-    def _session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
-        lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
-        tau = user_session.pr_delta
-        # print("lambda")
-        # print(lam, tau + self.eps)
-        # print(-lam * (tau + self.eps))
-        cur_ll_d = -((1 / lam + tau + self.eps) * np.exp(-lam * (tau + self.eps)) -
-                     (1 / lam + tau - self.eps) * np.exp(-lam * (tau - self.eps))) / \
-                    (np.exp(-lam * (tau + self.eps)) - np.exp(-lam * (tau - self.eps)))
-        users_derivatives[user_id] += cur_ll_d * lam_user_d
-        project_derivatives[user_session.pid] += cur_ll_d * lam_projects_d
-
-    def _last_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
-        lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
-        tau = user_session.pr_delta
-        cur_ll_d = -((tau - 1 / lam) * np.exp(-lam * tau) + 1 / lam) / (lam + np.exp(-lam * tau) - 1)
-        users_derivatives[user_id] += cur_ll_d * lam_user_d
-        project_derivatives[user_session.pid] += cur_ll_d * lam_projects_d
+    # def _session_likelihood(self, user_session, user_lambda):
+    #     cur_lambda = user_lambda.get(user_session.pid)
+    #     return np.log(-(np.exp(-cur_lambda * (user_session.pr_delta + self.eps)) -
+    #                    np.exp(-cur_lambda * (user_session.pr_delta - self.eps))) / cur_lambda)
+    #
+    # def _last_likelihood(self, user_session, user_lambda):
+    #     cur_lambda = user_lambda.get(user_session.pid)
+    #     return np.log(1. + (np.exp(-cur_lambda * user_session.pr_delta) - 1) / cur_lambda)
+    #
+    # def _session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
+    #     lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
+    #     tau = user_session.pr_delta
+    #     cur_ll_d = -((1 / lam + tau + self.eps) * np.exp(-lam * (tau + self.eps)) -
+    #                  (1 / lam + tau - self.eps) * np.exp(-lam * (tau - self.eps))) / \
+    #                 (np.exp(-lam * (tau + self.eps)) - np.exp(-lam * (tau - self.eps)))
+    #     users_derivatives[user_id] += cur_ll_d * lam_user_d
+    #     project_derivatives[user_session.pid] += cur_ll_d * lam_projects_d
+    #
+    # def _last_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
+    #     lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
+    #     tau = user_session.pr_delta
+    #     cur_ll_d = ((tau + 1 / lam) * np.exp(-lam * tau) - 1 / lam) / (lam + np.exp(-lam * tau) - 1)
+    #     users_derivatives[user_id] -= cur_ll_d * lam_user_d
+    #     project_derivatives[user_session.pid] -= cur_ll_d * lam_projects_d
 
     def optimization_step(self):
         users_derivatives, project_derivatives = self.ll_derivative()
@@ -176,3 +177,72 @@ class Model:
 
     def get_project_embeddings(self):
         return self.project_embeddings
+
+
+class Model2UA(Model):
+    def __init__(self, users_history, dim, learning_rate=0.01, beta=0.01, eps=3600, other_project_importance=0.5):
+        Model.__init__(self, users_history, dim, learning_rate, beta, eps, other_project_importance)
+        self.square = False
+
+    def _session_likelihood(self, user_session, user_lambda):
+        cur_lambda = user_lambda.get(user_session.pid)
+        return np.log(-(np.exp(-cur_lambda * (user_session.pr_delta + self.eps)) -
+                        np.exp(-cur_lambda * (user_session.pr_delta - self.eps))) / cur_lambda)
+
+    def _last_likelihood(self, user_session, user_lambda):
+        cur_lambda = user_lambda.get(user_session.pid)
+        return np.log(1. + (np.exp(-cur_lambda * user_session.pr_delta) - 1) / cur_lambda)
+
+    def _session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
+        lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
+        tau = user_session.pr_delta
+        cur_ll_d = -((1 / lam + tau + self.eps) * np.exp(-lam * (tau + self.eps)) -
+                     (1 / lam + tau - self.eps) * np.exp(-lam * (tau - self.eps))) / \
+                   (np.exp(-lam * (tau + self.eps)) - np.exp(-lam * (tau - self.eps)))
+        users_derivatives[user_id] += cur_ll_d * lam_user_d
+        project_derivatives[user_session.pid] += cur_ll_d * lam_projects_d
+
+    def _last_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
+        lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
+        tau = user_session.pr_delta
+        cur_ll_d = ((tau + 1 / lam) * np.exp(-lam * tau) - 1 / lam) / (lam + np.exp(-lam * tau) - 1)
+        users_derivatives[user_id] -= cur_ll_d * lam_user_d
+        project_derivatives[user_session.pid] -= cur_ll_d * lam_projects_d
+
+
+class Model2Lambda(Model):
+    def __init__(self, users_history, dim, learning_rate=0.01, beta=0.01, eps=3600, other_project_importance=0.5):
+        Model.__init__(self, users_history, dim, learning_rate, beta, eps, other_project_importance)
+        self.square = False
+
+    def _session_likelihood(self, user_session, user_lambda):
+        cur_lambda2 = user_lambda.get(user_session.pid) ** 2
+        if -(np.exp(-cur_lambda2 * (user_session.pr_delta + self.eps)) -
+             np.exp(-cur_lambda2 * (user_session.pr_delta - self.eps))) / cur_lambda2 > 1:
+            print("error 1")
+        return np.log(-(np.exp(-cur_lambda2 * (user_session.pr_delta + self.eps)) -
+                        np.exp(-cur_lambda2 * (user_session.pr_delta - self.eps))) / cur_lambda2)
+
+    def _last_likelihood(self, user_session, user_lambda):
+        cur_lambda2 = user_lambda.get(user_session.pid) ** 2
+        if 1. + (np.exp(-cur_lambda2 * user_session.pr_delta) - 1) / cur_lambda2 > 1:
+            print("error 2")
+        return np.log(1. + (np.exp(-cur_lambda2 * user_session.pr_delta) - 1) / cur_lambda2)
+
+    def _session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
+        lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
+        lam2 = lam ** 2
+        tau = user_session.pr_delta
+        cur_ll_d = -2 * ((1 / lam + lam * (tau + self.eps)) * np.exp(-lam2 * (tau + self.eps)) -
+                         (1 / lam + lam * (tau - self.eps)) * np.exp(-lam2 * (tau - self.eps))) / \
+                   (np.exp(-lam2 * (tau + self.eps)) - np.exp(-lam2 * (tau - self.eps)))
+        users_derivatives[user_id] += cur_ll_d * lam_user_d
+        project_derivatives[user_session.pid] += cur_ll_d * lam_projects_d
+
+    def _last_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
+        lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
+        tau = user_session.pr_delta
+        lam2 = lam ** 2
+        cur_ll_d = ((tau + 2 / lam2) * np.exp(-lam2 * tau) - 2 / lam2) / (lam + (np.exp(-lam2 * tau) - 1) / lam)
+        users_derivatives[user_id] -= cur_ll_d * lam_user_d
+        project_derivatives[user_session.pid] -= cur_ll_d * lam_projects_d
