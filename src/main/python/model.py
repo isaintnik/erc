@@ -231,7 +231,7 @@ class Model2Lambda(Model):
             print("error 2")
         return np.log(1. + (np.exp(-cur_lambda2 * user_session.pr_delta) - 1) / cur_lambda2)
 
-    def _session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
+    def _update_session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
         lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
         lam2 = lam ** 2
         tau = user_session.pr_delta
@@ -241,7 +241,7 @@ class Model2Lambda(Model):
         users_derivatives[user_id] += cur_ll_d * lam_user_d
         project_derivatives[user_session.pid] += cur_ll_d * lam_projects_d
 
-    def _last_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
+    def _update_last_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
         lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
         tau = user_session.pr_delta
         lam2 = lam ** 2
