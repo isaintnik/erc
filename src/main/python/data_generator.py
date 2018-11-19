@@ -55,11 +55,11 @@ class StepGenerator:
             usession = USession(pid_chosen,
                                 ts_start,
                                 ts_end,
-                                time_delta,
+                                time_delta if i > 0 else 0,
                                 1)
             current_ts = ts_end
 
-            self.user_lambdas.update(usession, 0, False)
+            self.user_lambdas.update(usession, time_delta if i > 0 else 0, False)
 
             generation_summary["pid_chosen"].append(pid_chosen)
             generation_summary["time_delta"].append(time_delta)
