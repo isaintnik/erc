@@ -2,7 +2,6 @@ import copy
 import numpy as np
 from collections import namedtuple
 
-now_ts = 1541019601  # 2018-11-01 00:00:01
 
 USession = namedtuple('USession', 'pid start_ts end_ts pr_delta n_tasks')
 
@@ -121,7 +120,7 @@ class Model:
                         self._update_session_derivative(user_session, user_id, user_lambda, users_derivatives,
                                                         project_derivatives)
                     else:
-                        ll += self._update_session_likelihood(user_session, user_lambda)
+                        ll += self._session_likelihood(user_session, user_lambda)
                     user_lambda.update(user_session, user_session.start_ts - user_history[i - 1].start_ts)
                 else:
                     last_times_sessions.add(user_session)
@@ -131,10 +130,22 @@ class Model:
                     self._update_last_derivative(user_session, user_id, user_lambda, users_derivatives,
                                                  project_derivatives)
                 else:
-                    ll += self._update_last_likelihood(user_session, user_lambda)
+                    ll += self._last_likelihood(user_session, user_lambda)
         if derivative:
             return users_derivatives, project_derivatives
         return ll
+
+    def _session_likelihood(self, user_session, user_lambda):
+        raise NotImplementedError()
+
+    def _last_likelihood(self, user_session, user_lambda):
+        raise NotImplementedError()
+
+    def _update_session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
+        raise NotImplementedError()
+
+    def _update_last_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
+        raise NotImplementedError()
 
     # def _session_likelihood(self, user_session, user_lambda):
     #     cur_lambda = user_lambda.get(user_session.pid)
@@ -180,12 +191,12 @@ class Model2UA(Model):
         Model.__init__(self, users_history, dim, learning_rate, beta, eps, other_project_importance)
         self.square = False
 
-    def _update_session_likelihood(self, user_session, user_lambda):
+    def _session_likelihood(self, user_session, user_lambda):
         cur_lambda = user_lambda.get(user_session.pid)
         return np.log(-np.exp(-cur_lambda * (user_session.pr_delta + self.eps)) +
                       np.exp(-cur_lambda * (user_session.pr_delta - self.eps)))
 
-    def _update_last_likelihood(self, user_session, user_lambda):
+    def _last_likelihood(self, user_session, user_lambda):
         return -user_lambda.get(user_session.pid) * user_session.pr_delta
 
     def _update_session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
@@ -208,12 +219,12 @@ class Model2Lambda(Model):
         Model.__init__(self, users_history, dim, learning_rate, beta, eps, other_project_importance)
         self.square = False
 
-    def _update_session_likelihood(self, user_session, user_lambda):
+    def _session_likelihood(self, user_session, user_lambda):
         cur_lambda2 = user_lambda.get(user_session.pid) ** 2
         return np.log(-np.exp(-cur_lambda2 * (user_session.pr_delta + self.eps)) +
                       np.exp(-cur_lambda2 * (user_session.pr_delta - self.eps)))
 
-    def _update_last_likelihood(self, user_session, user_lambda):
+    def _last_likelihood(self, user_session, user_lambda):
         return -(user_lambda.get(user_session.pid) ** 2) * user_session.pr_delta
 
     def _update_session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
