@@ -20,10 +20,10 @@ TIME_FOR_ONE_TASK = 120
 class StepGenerator:
 
     def __init__(self, user_embedding=None, project_embeddings=None, n_projects=3, dim=10, beta=0.1,
-                 other_project_importance=0.8):
+                 other_project_importance=0.8, max_lifetime = 100):
 
         self.n_projects = n_projects
-
+        self.max_lifetime = max_lifetime
         self.beta = beta
         self.other_project_importance = other_project_importance
         self.user_embedding = user_embedding if user_embedding is not None else np.random.randn(dim)
@@ -38,11 +38,13 @@ class StepGenerator:
                                        other_project_importance=self.other_project_importance,
                                        square=False)
 
-        current_ts = int(time.time())
+        current_ts = 0
 
         generation_summary = defaultdict(list)
+        lifetime = 0
+        p_cnt = 0
 
-        for i in range(1000):
+        while lifetime < self.max_lifetime:
 
             lambdas = {pid: self.user_lambdas.get(pid, False) for pid in range(len(self.project_embeddings))}
 
@@ -52,14 +54,19 @@ class StepGenerator:
             ts_start = current_ts + time_delta
             ts_end = ts_start + TIME_FOR_ONE_TASK
 
+            _time_delta = time_delta if p_cnt > 0 else 0
+
             usession = USession(pid_chosen,
                                 ts_start,
                                 ts_end,
-                                time_delta if i > 0 else 0,
+                                _time_delta,
                                 1)
+            p_cnt += 1
             current_ts = ts_end
 
-            self.user_lambdas.update(usession, time_delta if i > 0 else 0, False)
+            self.user_lambdas.update(usession, _time_delta, False)
+
+            lifetime += _time_delta
 
             generation_summary["pid_chosen"].append(pid_chosen)
             generation_summary["time_delta"].append(time_delta)
@@ -69,15 +76,15 @@ class StepGenerator:
 
 
 if __name__ == "__main__":
-    u_e = np.random.randn(10)
-    p_e = [np.random.randn(10)]*3
+    u_e = np.random.randn(2)
+    p_e = [np.random.randn(2)]*3
     sg = StepGenerator(user_embedding=u_e, project_embeddings=p_e)
     print([project_embedding @ sg.user_embedding for project_embedding in sg.project_embeddings])
     gen_summary = sg._generate_user_steps()
     print(Counter(gen_summary['pid_chosen']))
     print()
 
-    u_e = np.random.randn(10)
+    u_e = np.random.randn(2)
     p_e = [u_e*2, u_e, u_e]
     sg = StepGenerator(user_embedding=u_e, project_embeddings=p_e, other_project_importance=0)
     print([project_embedding @ sg.user_embedding for project_embedding in sg.project_embeddings])
@@ -85,7 +92,7 @@ if __name__ == "__main__":
     print(Counter(gen_summary['pid_chosen']))
     print()
 
-    u_e = np.random.randn(10)
+    u_e = np.random.randn(2)
     p_e = [u_e, -u_e, -u_e]
     sg = StepGenerator(user_embedding=u_e, project_embeddings=p_e, other_project_importance=0)
     print([project_embedding @ sg.user_embedding for project_embedding in sg.project_embeddings])
