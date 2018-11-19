@@ -4,82 +4,92 @@ import string
 import time
 from collections import defaultdict, Counter
 
+import numpy as np
+from scipy.stats import expon
+
+from src.main.python.model import UserLambda, USession
+
 USER_IDX = 0
 TS_START_IDX = 1
 TS_END_IDX = 2
 PROJECT_ID_IDX = 3
 
+TIME_FOR_ONE_TASK = 120
 
-class DataGenerator:
 
-    def __init__(self, n_users=10, n_projects=10, n_samples=100):
+class StepGenerator:
 
-        self.n_users = n_users
+    def __init__(self, user_embedding=None, project_embeddings=None, n_projects=3, dim=10, beta=0.1,
+                 other_project_importance=0.8):
+
         self.n_projects = n_projects
-        self.n_samples = n_samples
 
-    def generate_users_history(self):
+        self.beta = beta
+        self.other_project_importance = other_project_importance
+        self.user_embedding = user_embedding if user_embedding is not None else np.random.randn(dim)
+        self.project_embeddings = project_embeddings if project_embeddings is not None else [np.random.randn(dim) for _
+                                                                                         in range(n_projects)]
 
-        steps = self._generate_users_steps()
-        users_history = self._group_steps_by_user(steps)
+    def _generate_user_steps(self):
 
-        return users_history
+        self.user_lambdas = UserLambda(user_embedding=self.user_embedding,
+                                       project_embeddings=self.project_embeddings,
+                                       beta=self.beta,
+                                       other_project_importance=self.other_project_importance,
+                                       square=False)
 
-    def _generate_users_steps(self):
-
-        user_ids = DataGenerator._generate_user_ids(self.n_users)
         current_ts = int(time.time())
 
-        steps = []
-        for _ in range(self.n_samples):
-            ts_start = current_ts + random.randint(0, 100)
-            ts_end = ts_start + random.randint(0, 100)
+        generation_summary = defaultdict(list)
 
-            current_ts = ts_end + random.randint(0, 100)
+        for i in range(1000):
 
-            project_id = random.randint(0, self.n_projects - 1)
-            user_id = random.choice(user_ids)
+            lambdas = {pid: self.user_lambdas.get(pid, False) for pid in range(len(self.project_embeddings))}
 
-            step = (user_id, ts_start, ts_end, project_id)
+            time_deltas = {pid: expon.rvs(loc=0, scale=1/lmbd**2) for pid, lmbd in lambdas.items()}
+            pid_chosen, time_delta = min(time_deltas.items(), key=lambda item: item[1])
 
-            steps.append(step)
+            ts_start = current_ts + time_delta
+            ts_end = ts_start + TIME_FOR_ONE_TASK
 
-        return steps
+            usession = USession(pid_chosen,
+                                ts_start,
+                                ts_end,
+                                time_delta,
+                                1)
+            current_ts = ts_end
 
-    def _group_steps_by_user(self, steps):
+            self.user_lambdas.update(usession, 0, False)
 
-        user_history = defaultdict(list)
+            generation_summary["pid_chosen"].append(pid_chosen)
+            generation_summary["time_delta"].append(time_delta)
+            generation_summary["u_history"].append(usession)
 
-        user_pr_cnt = Counter()
+        return generation_summary
 
-        for step in steps:
-            user_id = step[USER_IDX]
-            pr_id = step[PROJECT_ID_IDX]
 
-            ts_start = step[TS_START_IDX]
-            ts_end = step[TS_END_IDX]
+if __name__ == "__main__":
+    u_e = np.random.randn(10)
+    p_e = [np.random.randn(10)]*3
+    sg = StepGenerator(user_embedding=u_e, project_embeddings=p_e)
+    print([project_embedding @ sg.user_embedding for project_embedding in sg.project_embeddings])
+    gen_summary = sg._generate_user_steps()
+    print(Counter(gen_summary['pid_chosen']))
+    print()
 
-            key = "|".join(map(str, [user_id, pr_id]))
-            n_done = user_pr_cnt[key]
-            user_pr_cnt[key] += 1
+    u_e = np.random.randn(10)
+    p_e = [u_e*2, u_e, u_e]
+    sg = StepGenerator(user_embedding=u_e, project_embeddings=p_e, other_project_importance=0)
+    print([project_embedding @ sg.user_embedding for project_embedding in sg.project_embeddings])
+    gen_summary = sg._generate_user_steps()
+    print(Counter(gen_summary['pid_chosen']))
+    print()
 
-            user_history[user_id].append((ts_start, ts_end, pr_id, n_done))
-
-        return user_history
-
-    @staticmethod
-    def _generate_user_id(id_len=8):
-        return "".join(random.choice(string.ascii_letters) for _ in range(
-            id_len))
-
-    @staticmethod
-    def _generate_user_ids(n_users):
-        user_ids = set()
-        user_name_len = int(math.log(10000 * n_users, len(string.ascii_letters)))
-
-        while len(user_ids) < n_users:
-            user_ids.add(DataGenerator._generate_user_id(user_name_len))
-        user_ids = list(user_ids)
-
-        return user_ids
+    u_e = np.random.randn(10)
+    p_e = [u_e, -u_e, -u_e]
+    sg = StepGenerator(user_embedding=u_e, project_embeddings=p_e, other_project_importance=0)
+    print([project_embedding @ sg.user_embedding for project_embedding in sg.project_embeddings])
+    gen_summary = sg._generate_user_steps()
+    print(Counter(gen_summary['pid_chosen']))
+    print()
 
