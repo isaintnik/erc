@@ -2,13 +2,7 @@ import copy
 import numpy as np
 from collections import namedtuple
 
-
-# T_BEGIN = 0
-# T_END = 1
-# PROJECT_ID = 2
-# N_DONE = 3
 now_ts = 1541019601  # 2018-11-01 00:00:01
-
 
 USession = namedtuple('USession', 'pid start_ts end_ts pr_delta n_tasks')
 
@@ -127,7 +121,7 @@ class Model:
                         self._update_session_derivative(user_session, user_id, user_lambda, users_derivatives,
                                                         project_derivatives)
                     else:
-                        ll += self._session_likelihood(user_session, user_lambda)
+                        ll += self._update_session_likelihood(user_session, user_lambda)
                     user_lambda.update(user_session, user_session.start_ts - user_history[i - 1].start_ts)
                 else:
                     last_times_sessions.add(user_session)
@@ -137,7 +131,7 @@ class Model:
                     self._update_last_derivative(user_session, user_id, user_lambda, users_derivatives,
                                                  project_derivatives)
                 else:
-                    ll += self._last_likelihood(user_session, user_lambda)
+                    ll += self._update_last_likelihood(user_session, user_lambda)
         if derivative:
             return users_derivatives, project_derivatives
         return ll
@@ -186,14 +180,13 @@ class Model2UA(Model):
         Model.__init__(self, users_history, dim, learning_rate, beta, eps, other_project_importance)
         self.square = False
 
-    def _session_likelihood(self, user_session, user_lambda):
+    def _update_session_likelihood(self, user_session, user_lambda):
         cur_lambda = user_lambda.get(user_session.pid)
         return np.log(-np.exp(-cur_lambda * (user_session.pr_delta + self.eps)) +
                       np.exp(-cur_lambda * (user_session.pr_delta - self.eps)))
 
-    def _last_likelihood(self, user_session, user_lambda):
-        cur_lambda = user_lambda.get(user_session.pid)
-        return -cur_lambda * user_session.pr_delta
+    def _update_last_likelihood(self, user_session, user_lambda):
+        return -user_lambda.get(user_session.pid) * user_session.pr_delta
 
     def _update_session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
         lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
@@ -206,10 +199,8 @@ class Model2UA(Model):
 
     def _update_last_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
         lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
-        tau = user_session.pr_delta
-        cur_ll_d = -tau
-        users_derivatives[user_id] -= cur_ll_d * lam_user_d
-        project_derivatives[user_session.pid] -= cur_ll_d * lam_projects_d
+        users_derivatives[user_id] -= user_session.pr_delta * lam_user_d
+        project_derivatives[user_session.pid] -= user_session.pr_delta * lam_projects_d
 
 
 class Model2Lambda(Model):
@@ -217,34 +208,25 @@ class Model2Lambda(Model):
         Model.__init__(self, users_history, dim, learning_rate, beta, eps, other_project_importance)
         self.square = False
 
-    def _session_likelihood(self, user_session, user_lambda):
+    def _update_session_likelihood(self, user_session, user_lambda):
         cur_lambda2 = user_lambda.get(user_session.pid) ** 2
-        if -(np.exp(-cur_lambda2 * (user_session.pr_delta + self.eps)) -
-             np.exp(-cur_lambda2 * (user_session.pr_delta - self.eps))) / cur_lambda2 > 1:
-            print("error 1")
-        return np.log(-(np.exp(-cur_lambda2 * (user_session.pr_delta + self.eps)) -
-                        np.exp(-cur_lambda2 * (user_session.pr_delta - self.eps))) / cur_lambda2)
+        return np.log(-np.exp(-cur_lambda2 * (user_session.pr_delta + self.eps)) +
+                      np.exp(-cur_lambda2 * (user_session.pr_delta - self.eps)))
 
-    def _last_likelihood(self, user_session, user_lambda):
-        cur_lambda2 = user_lambda.get(user_session.pid) ** 2
-        if 1. + (np.exp(-cur_lambda2 * user_session.pr_delta) - 1) / cur_lambda2 > 1:
-            print("error 2")
-        return np.log(1. + (np.exp(-cur_lambda2 * user_session.pr_delta) - 1) / cur_lambda2)
+    def _update_last_likelihood(self, user_session, user_lambda):
+        return -(user_lambda.get(user_session.pid) ** 2) * user_session.pr_delta
 
-    def _session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
+    def _update_session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
         lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
         lam2 = lam ** 2
         tau = user_session.pr_delta
-        cur_ll_d = -2 * ((1 / lam + lam * (tau + self.eps)) * np.exp(-lam2 * (tau + self.eps)) -
-                         (1 / lam + lam * (tau - self.eps)) * np.exp(-lam2 * (tau - self.eps))) / \
-                   (np.exp(-lam2 * (tau + self.eps)) - np.exp(-lam2 * (tau - self.eps)))
+        cur_ll_d = 2 * lam * ((tau + self.eps) * np.exp(-lam2 * (tau + self.eps)) -
+                              (tau - self.eps) * np.exp(-lam2 * (tau - self.eps))) / \
+                   (-np.exp(-lam2 * (tau + self.eps)) + np.exp(-lam2 * (tau - self.eps)))
         users_derivatives[user_id] += cur_ll_d * lam_user_d
         project_derivatives[user_session.pid] += cur_ll_d * lam_projects_d
 
-    def _last_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
+    def _update_last_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
         lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
-        tau = user_session.pr_delta
-        lam2 = lam ** 2
-        cur_ll_d = ((tau + 2 / lam2) * np.exp(-lam2 * tau) - 2 / lam2) / (lam + (np.exp(-lam2 * tau) - 1) / lam)
-        users_derivatives[user_id] -= cur_ll_d * lam_user_d
-        project_derivatives[user_session.pid] -= cur_ll_d * lam_projects_d
+        users_derivatives[user_id] -= 2 * lam * user_session.pr_delta * lam_user_d
+        project_derivatives[user_session.pid] -= 2 * lam * user_session.pr_delta * lam_projects_d
