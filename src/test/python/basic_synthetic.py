@@ -1,4 +1,5 @@
 from src.main.python.model import *
+from src.main.python.data_generator import *
 
 
 def generate_synthetic(users, projects):
@@ -75,7 +76,6 @@ def convergence_test():
     dim = 3
     users, projects = generate_vectors(users_num, projects_num, dim)
     users_history = generate_synthetic(users, projects)
-    # model = Model2UA(users_history, dim, learning_rate=0.003, eps=10)
     model = Model2UA(users_history, dim, learning_rate=0.003, eps=10)
     # model = Model2Lambda(users_history, dim, learning_rate=0.003, eps=10)
     for i in range(100):
@@ -86,6 +86,38 @@ def convergence_test():
     print(model.project_embeddings)
 
 
+def interaction_matrix(users, projects):
+    return np.array([[u.T @ p for p in projects] for u in users])
+
+
+def synthetic_test():
+    users_num = 2
+    projects_num = 2
+    dim = 2
+    users, projects = generate_vectors(users_num, projects_num, dim)
+    # print(users)
+    print(interaction_matrix(users, projects))
+    X = []
+    for i in range(users_num):
+        sg = StepGenerator(user_embedding=users[i], project_embeddings=projects)
+        x = sg._generate_user_steps()["u_history"]
+        X.append(x)
+    X = np.array(X)
+    # print(X.shape)
+    # print(X[0][0])
+    # print(X[0])
+    model = Model2Lambda(X, dim, learning_rate=0.003, eps=1)
+    for i in range(100):
+        if i % 30 == 0:
+            print("{}-th iter, ll = {}".format(i, model.log_likelihood()))
+        model.optimization_step()
+    # print(model.user_embeddings)
+    print(interaction_matrix(model.user_embeddings, model.project_embeddings))
+    # print(model.project_embeddings)
+
+
+
 if __name__ == "__main__":
     # correct_derivative_test()
-    convergence_test()
+    # convergence_test()
+    synthetic_test()
