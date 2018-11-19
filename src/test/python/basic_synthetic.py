@@ -94,27 +94,30 @@ def synthetic_test():
     users_num = 2
     projects_num = 2
     dim = 2
-    users, projects = generate_vectors(users_num, projects_num, dim)
+    beta = 0.001
+    other_project_importance = 0.3
+    users, projects = generate_vectors(users_num, projects_num, dim, std_dev=0.1)
     # print(users)
-    print(interaction_matrix(users, projects))
-    X = []
-    for i in range(users_num):
-        sg = StepGenerator(user_embedding=users[i], project_embeddings=projects)
-        x = sg._generate_user_steps()["u_history"]
-        X.append(x)
-    X = np.array(X)
-    # print(X.shape)
+    X = [StepGenerator(user_embedding=user, project_embeddings=projects, beta=beta,
+                       other_project_importance=other_project_importance, max_lifetime=5000)
+             .generate_user_steps() for user in users]
+    print(len(X))
+    print(len(X[0]))
     # print(X[0][0])
     # print(X[0])
-    model = Model2Lambda(X, dim, learning_rate=0.003, eps=1)
+    print("data generated")
+    model = Model2Lambda(X, dim, learning_rate=0.003, eps=20, beta=beta,
+                         other_project_importance=other_project_importance)
+    # model = Model2UA(X, dim, learning_rate=0.003, eps=30, beta=beta,
+    #                  other_project_importance=other_project_importance)
     for i in range(100):
-        if i % 30 == 0:
+        if i % 20 == 0:
             print("{}-th iter, ll = {}".format(i, model.log_likelihood()))
         model.optimization_step()
+    print(interaction_matrix(users, projects))
     # print(model.user_embeddings)
     print(interaction_matrix(model.user_embeddings, model.project_embeddings))
     # print(model.project_embeddings)
-
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 import copy
+import math
 import numpy as np
 from collections import namedtuple
 
@@ -9,30 +10,39 @@ USession = namedtuple('USession', 'pid start_ts end_ts pr_delta n_tasks')
 
 class UserProjectLambda:
     def __init__(self, user_embedding, beta, square=False):
-        self.numerator = 1
-        self.denominator = 1
+        self.numerator = 10
+        self.denominator = 10
         self.beta = beta
-        self.square = square
+        # self.square = square
         self.user_embedding = user_embedding
         self.user_d_numerator = np.zeros_like(user_embedding)
         self.project_d_numerators = np.zeros(user_embedding.shape)
+        self.avg_time_between_sessions = 5
 
     def update(self, project_embedding, n_tasks, delta_time, coeff, derivative=True):
         e = np.exp(-self.beta * delta_time)
         ua = self.user_embedding @ project_embedding
-        self.numerator = e * self.numerator + coeff * n_tasks * ua * (ua if self.square else 1)
+        self.numerator = e * self.numerator + coeff * n_tasks * ua  # * (ua if self.square else 1)
+        if math.isnan(self.numerator):
+            print(e, coeff, n_tasks, ua)
         self.denominator = e * self.denominator + coeff
         if derivative:
             self.user_d_numerator = e * self.user_d_numerator + coeff * n_tasks * \
-                                    project_embedding * (2 * ua if self.square else 1)
+                                    project_embedding  # * (2 * ua if self.square else 1)
             self.project_d_numerators = e * self.project_d_numerators + coeff * n_tasks * \
-                                        self.user_embedding * (2 * ua if self.square else 1)
+                                        self.user_embedding  # * (2 * ua if self.square else 1)
 
     def get(self, derivative=False):
-        cur_lambda = self.numerator / self.denominator
+        cur_lambda = self.numerator / self.denominator / self.avg_time_between_sessions
         if derivative:
-            user_derivative = self.user_d_numerator / self.denominator
-            project_derivative = self.project_d_numerators / self.denominator
+            user_derivative = self.user_d_numerator / self.denominator / self.avg_time_between_sessions
+            project_derivative = self.project_d_numerators / self.denominator / self.avg_time_between_sessions
+            if math.isnan(user_derivative[0]):
+                print(self.denominator)
+            if math.isnan(user_derivative[0]):
+                print(self.user_d_numerator)
+            if math.isnan(project_derivative[0]):
+                print(self.project_d_numerators)
             return cur_lambda, user_derivative, project_derivative
         return cur_lambda
 
@@ -43,6 +53,8 @@ class UserLambda:
         self.beta = beta
         self.other_project_importance = other_project_importance
         self.user_embedding = user_embedding
+        if math.isnan(user_embedding[0]):
+            print("u_e is nan")
         self.project_embeddings = project_embeddings
         self.default_lambda = UserProjectLambda(self.user_embedding, self.beta, square)
 
@@ -63,22 +75,21 @@ class UserLambda:
 
 
 class Model:
-    def __init__(self, users_history, dim, learning_rate=0.01, beta=0.01, eps=3600, other_project_importance=0.5):
+    def __init__(self, users_history, dim, learning_rate=0.003, beta=0.001, eps=3600, other_project_importance=0.3):
         self.users_history = users_history
         self.emb_dim = dim
         self.learning_rate = learning_rate
         self.beta = beta
         self.eps = eps
-        self.type = 0
         self.other_project_importance = other_project_importance
 
         self.user_embeddings = np.array(
-            [np.random.normal(0, 0.51, self.emb_dim) for _ in range(len(self.users_history))])
+            [np.random.normal(0, 0.2, self.emb_dim) for _ in range(len(self.users_history))])
         projects_set = set()
         for user_history in self.users_history:
             for session in user_history:
                 projects_set.add(session.pid)
-        self.project_embeddings = np.array([np.random.normal(0, 0.51, self.emb_dim) for _ in range(len(projects_set))])
+        self.project_embeddings = np.array([np.random.normal(0, 0.2, self.emb_dim) for _ in range(len(projects_set))])
         # self.init_user_embeddings()
         # self.init_project_embeddings()
 
@@ -105,7 +116,7 @@ class Model:
         for user_id in range(len(self.users_history)):
             user_history = self.users_history[user_id]
             user_lambda = UserLambda(self.user_embeddings[user_id], self.project_embeddings,
-                                     self.beta, self.other_project_importance, self.type == 0)
+                                     self.beta, self.other_project_importance, self.square)
             done_projects = set()
             last_times_sessions = set()
             for i, user_session in enumerate(user_history):
@@ -167,6 +178,8 @@ class Model:
             self.user_embeddings[i] += self.learning_rate * users_derivatives[i]
         for i in range(len(self.project_embeddings)):
             self.project_embeddings[i] += self.learning_rate * project_derivatives[i]
+        # print(self.user_embeddings)
+        # print(self.project_embeddings)
 
     def get_user_embeddings(self):
         return self.user_embeddings
@@ -178,7 +191,7 @@ class Model:
 class Model2UA(Model):
     def __init__(self, users_history, dim, learning_rate=0.01, beta=0.01, eps=3600, other_project_importance=0.5):
         Model.__init__(self, users_history, dim, learning_rate, beta, eps, other_project_importance)
-        self.square = False
+        self.square = True
 
     def _update_session_likelihood(self, user_session, user_lambda):
         cur_lambda = user_lambda.get(user_session.pid)
@@ -192,8 +205,8 @@ class Model2UA(Model):
         lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
         tau = user_session.pr_delta
         cur_ll_d = ((tau + self.eps) * np.exp(-lam * (tau + self.eps)) -
-                    (tau - self.eps) * np.exp(-lam * (tau - self.eps))) / \
-                   (-np.exp(-lam * (tau + self.eps)) + np.exp(-lam * (tau - self.eps)))
+                    max(0, tau - self.eps) * np.exp(-lam * max(0, tau - self.eps))) / \
+                   (-np.exp(-lam * (tau + self.eps)) + np.exp(-lam * max(0, tau - self.eps)))
         users_derivatives[user_id] += cur_ll_d * lam_user_d
         project_derivatives[user_session.pid] += cur_ll_d * lam_projects_d
 
@@ -210,8 +223,15 @@ class Model2Lambda(Model):
 
     def _update_session_likelihood(self, user_session, user_lambda):
         cur_lambda2 = user_lambda.get(user_session.pid) ** 2
+        if math.isnan(cur_lambda2):
+            print("Is None")
+        val = -np.exp(-cur_lambda2 * (user_session.pr_delta + self.eps)) + np.exp(
+            -cur_lambda2 * max(0, user_session.pr_delta - self.eps))
+        if not (0 <= val <= 1):
+            print(val)
+            assert 0 <= val <= 1
         return np.log(-np.exp(-cur_lambda2 * (user_session.pr_delta + self.eps)) +
-                      np.exp(-cur_lambda2 * (user_session.pr_delta - self.eps)))
+                      np.exp(-cur_lambda2 * max(0, user_session.pr_delta - self.eps)))
 
     def _update_last_likelihood(self, user_session, user_lambda):
         return -(user_lambda.get(user_session.pid) ** 2) * user_session.pr_delta
@@ -221,8 +241,10 @@ class Model2Lambda(Model):
         lam2 = lam ** 2
         tau = user_session.pr_delta
         cur_ll_d = 2 * lam * ((tau + self.eps) * np.exp(-lam2 * (tau + self.eps)) -
-                              (tau - self.eps) * np.exp(-lam2 * (tau - self.eps))) / \
-                   (-np.exp(-lam2 * (tau + self.eps)) + np.exp(-lam2 * (tau - self.eps)))
+                              max(0, tau - self.eps) * np.exp(-lam2 * max(0, tau - self.eps))) / \
+                   (-np.exp(-lam2 * (tau + self.eps)) + np.exp(-lam2 * max(0, tau - self.eps)))
+        if cur_ll_d > 100:
+            print(cur_ll_d, tau)
         users_derivatives[user_id] += cur_ll_d * lam_user_d
         project_derivatives[user_session.pid] += cur_ll_d * lam_projects_d
 
