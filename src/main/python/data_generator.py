@@ -1,8 +1,4 @@
-from collections import defaultdict, Counter
-
 import numpy as np
-from scipy.stats import expon
-
 from src.main.python.model import UserLambda, USession
 
 USER_IDX = 0
@@ -18,7 +14,7 @@ AVG_TASKS_ON_SESSION = 3.73
 class StepGenerator:
 
     def __init__(self, user_embedding=None, project_embeddings=None, n_projects=3, dim=10, beta=0.001,
-                 other_project_importance=0.8, max_lifetime=100, verbose=0):
+                 other_project_importance=0.8, max_lifetime=100, verbose=False):
         self.n_projects = n_projects
         self.max_lifetime = max_lifetime
         self.beta = beta
@@ -49,14 +45,17 @@ class StepGenerator:
         #         nearest_pid = (pid, pr_delta, inner_delta)
         # return nearest_pid
 
-        for pid in projects_ids:
-            if 1 / self.user_lambdas.get(pid) ** 2 < 0:
-                print(1 / self.user_lambdas.get(pid) ** 2)
-                assert 1 / self.user_lambdas.get(pid) ** 2
-        time_deltas = {pid: np.random.exponential(scale=(1 / (self.user_lambdas.get(pid) ** 2))) for pid in projects_ids}
+        # for pid in projects_ids:
+        #     if 1 / self.user_lambdas.get(pid) ** 2 < 0:
+        #         print(1 / self.user_lambdas.get(pid) ** 2)
+        #         assert 1 / self.user_lambdas.get(pid) ** 2
+        time_deltas = {pid: np.random.exponential(scale=1 / self.user_lambdas.get(pid) ** 2) for pid in projects_ids}
+        # time_deltas = {pid: np.random.exponential(scale=1 / np.exp(self.user_lambdas.get(pid))) for pid in projects_ids}
         pid_chosen, time_delta = min(time_deltas.items(), key=lambda item: item[1])
         if self.verbose:
-            print(pid_chosen, 1 / self.user_lambdas.get(pid_chosen) ** 2)
+            print({pid: 1 / self.user_lambdas.get(pid) ** 2 for pid in projects_ids})
+            # print({pid: 1 / np.exp(self.user_lambdas.get(pid)) for pid in projects_ids})
+            print({pid: self.user_lambdas.get(pid) for pid in projects_ids})
         return pid_chosen, time_delta, time_delta
 
     def generate_user_steps(self):
@@ -66,13 +65,17 @@ class StepGenerator:
         last_time_done = {pid: 0 for pid in projects_ids}
         latest_done_project_ts = 0
 
-        while current_ts < self.max_lifetime:
+        k = 0
+        while current_ts < self.max_lifetime and k < 100:
+            # k += 1
 
             pid, time_delta, inner_delta = self._select_project(projects_ids, last_time_done, current_ts)
             if self.verbose:
                 print("1.", pid, time_delta, inner_delta)
             n_tasks = np.random.geometric(1 / AVG_TASKS_ON_SESSION)
+            # n_tasks = 1
             session_time = sum([abs(np.random.normal(AVG_TIME_FOR_TASK, STD_TIME_FOR_TASK)) + 2 for _ in range(n_tasks)])
+            # session_time = AVG_TIME_FOR_TASK
             if self.verbose:
                 print("2.", n_tasks, session_time)
 
@@ -85,6 +88,7 @@ class StepGenerator:
             user_session = USession(pid, ts_start, ts_end, inner_delta, n_tasks)
             if self.verbose:
                 print("3.", user_session)
+                print(np.exp(-self.beta * (ts_end - latest_done_project_ts)))
             self.user_lambdas.update(user_session, ts_end - latest_done_project_ts, False)
             latest_done_project_ts = ts_end
             generation_summary.append(user_session)

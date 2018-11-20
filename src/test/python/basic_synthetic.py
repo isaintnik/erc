@@ -99,7 +99,7 @@ def synthetic_test():
     users, projects = generate_vectors(users_num, projects_num, dim, std_dev=0.1)
     # print(users)
     X = [StepGenerator(user_embedding=user, project_embeddings=projects, beta=beta,
-                       other_project_importance=other_project_importance, max_lifetime=5000)
+                       other_project_importance=other_project_importance, max_lifetime=50000)
              .generate_user_steps() for user in users]
     print(len(X))
     print(len(X[0]))

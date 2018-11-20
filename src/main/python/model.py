@@ -22,18 +22,19 @@ class UserProjectLambda:
     def update(self, project_embedding, n_tasks, delta_time, coeff, derivative=True):
         e = np.exp(-self.beta * delta_time)
         ua = self.user_embedding @ project_embedding
-        self.numerator = e * self.numerator + coeff * n_tasks * ua  # * (ua if self.square else 1)
+        # print(e, self.numerator, self.denominator, coeff, ua)
+        self.numerator = e * self.numerator + coeff * ua  # * n_tasks * (ua if self.square else 1)
         if math.isnan(self.numerator):
             print(e, coeff, n_tasks, ua)
         self.denominator = e * self.denominator + coeff
+        # print(e, self.numerator, self.denominator, coeff, ua)
         if derivative:
-            self.user_d_numerator = e * self.user_d_numerator + coeff * n_tasks * \
-                                    project_embedding  # * (2 * ua if self.square else 1)
-            self.project_d_numerators = e * self.project_d_numerators + coeff * n_tasks * \
-                                        self.user_embedding  # * (2 * ua if self.square else 1)
+            self.user_d_numerator = e * self.user_d_numerator + coeff * project_embedding * n_tasks #* (2 * ua if self.square else 1)
+            self.project_d_numerators = e * self.project_d_numerators + coeff * self.user_embedding * n_tasks #* (2 * ua if self.square else 1)
 
     def get(self, derivative=False):
         cur_lambda = self.numerator / self.denominator / self.avg_time_between_sessions
+        # cur_lambda = self.numerator / self.avg_time_between_sessions
         if derivative:
             user_derivative = self.user_d_numerator / self.denominator / self.avg_time_between_sessions
             project_derivative = self.project_d_numerators / self.denominator / self.avg_time_between_sessions
@@ -252,3 +253,41 @@ class Model2Lambda(Model):
         lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
         users_derivatives[user_id] -= 2 * lam * user_session.pr_delta * lam_user_d
         project_derivatives[user_session.pid] -= 2 * lam * user_session.pr_delta * lam_projects_d
+
+
+class ModelExpLambda(Model):
+    def __init__(self, users_history, dim, learning_rate=0.01, beta=0.01, eps=3600, other_project_importance=0.5):
+        Model.__init__(self, users_history, dim, learning_rate, beta, eps, other_project_importance)
+        self.square = False
+
+    def _update_session_likelihood(self, user_session, user_lambda):
+        exp_lambda = np.exp(user_lambda.get(user_session.pid))
+        if math.isnan(exp_lambda):
+            print("Is None")
+        val = -np.exp(-exp_lambda * (user_session.pr_delta + self.eps)) + np.exp(
+            -exp_lambda * max(0, user_session.pr_delta - self.eps))
+        if not (0 <= val <= 1):
+            print(val)
+            assert 0 <= val <= 1
+        return np.log(-np.exp(-exp_lambda * (user_session.pr_delta + self.eps)) +
+                      np.exp(-exp_lambda * max(0, user_session.pr_delta - self.eps)))
+
+    def _update_last_likelihood(self, user_session, user_lambda):
+        return -(np.exp(user_lambda.get(user_session.pid))) * user_session.pr_delta
+
+    def _update_session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
+        lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
+        exp_lam = np.exp(lam)
+        tau = user_session.pr_delta
+        cur_ll_d = exp_lam * ((tau + self.eps) * np.exp(-exp_lam * (tau + self.eps)) -
+                              max(0, tau - self.eps) * np.exp(-exp_lam * max(0, tau - self.eps))) / \
+                   (-np.exp(-exp_lam * (tau + self.eps)) + np.exp(-exp_lam * max(0, tau - self.eps)))
+        if cur_ll_d > 100:
+            print(cur_ll_d, tau)
+        users_derivatives[user_id] += cur_ll_d * lam_user_d
+        project_derivatives[user_session.pid] += cur_ll_d * lam_projects_d
+
+    def _update_last_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
+        lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
+        users_derivatives[user_id] -= np.exp(lam) * user_session.pr_delta * lam_user_d
+        project_derivatives[user_session.pid] -= np.exp(lam) * user_session.pr_delta * lam_projects_d
