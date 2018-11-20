@@ -1,5 +1,4 @@
 import copy
-import math
 import numpy as np
 from collections import namedtuple
 
@@ -8,40 +7,32 @@ USession = namedtuple('USession', 'pid start_ts end_ts pr_delta n_tasks')
 
 
 class UserProjectLambda:
-    def __init__(self, user_embedding, beta, square=False):
+    def __init__(self, user_embedding, n_projects, beta, square=False):
         self.numerator = 10
         self.denominator = 10
         self.beta = beta
-        # self.square = square
+        self.square = square
         self.user_embedding = user_embedding
         self.user_d_numerator = np.zeros_like(user_embedding)
-        self.project_d_numerators = np.zeros(user_embedding.shape)
+        self.project_d_numerators = np.zeros((n_projects, len(user_embedding)))
         self.avg_time_between_sessions = 5
 
-    def update(self, project_embedding, n_tasks, delta_time, coeff, derivative=True):
+    def update(self, project_embedding, project_id, n_tasks, delta_time, coeff, derivative=True):
         e = np.exp(-self.beta * delta_time)
         ua = self.user_embedding @ project_embedding
-        self.numerator = e * self.numerator + coeff * n_tasks * ua  # * (ua if self.square else 1)
-        if math.isnan(self.numerator):
-            print(e, coeff, n_tasks, ua)
+        self.numerator = e * self.numerator + coeff * n_tasks * ua * (ua if self.square else 1)
         self.denominator = e * self.denominator + coeff
         if derivative:
             self.user_d_numerator = e * self.user_d_numerator + coeff * n_tasks * \
-                                    project_embedding  # * (2 * ua if self.square else 1)
-            self.project_d_numerators = e * self.project_d_numerators + coeff * n_tasks * \
-                                        self.user_embedding  # * (2 * ua if self.square else 1)
+                project_embedding * (2 * ua if self.square else 1)
+            self.project_d_numerators[project_id] = e * self.project_d_numerators[project_id] + \
+                coeff * n_tasks * self.user_embedding * (2 * ua if self.square else 1)
 
     def get(self, derivative=False):
         cur_lambda = self.numerator / self.denominator / self.avg_time_between_sessions
         if derivative:
             user_derivative = self.user_d_numerator / self.denominator / self.avg_time_between_sessions
             project_derivative = self.project_d_numerators / self.denominator / self.avg_time_between_sessions
-            if math.isnan(user_derivative[0]):
-                print(self.denominator)
-            if math.isnan(user_derivative[0]):
-                print(self.user_d_numerator)
-            if math.isnan(project_derivative[0]):
-                print(self.project_d_numerators)
             return cur_lambda, user_derivative, project_derivative
         return cur_lambda
 
@@ -52,19 +43,17 @@ class UserLambda:
         self.beta = beta
         self.other_project_importance = other_project_importance
         self.user_embedding = user_embedding
-        if math.isnan(user_embedding[0]):
-            print("u_e is nan")
         self.project_embeddings = project_embeddings
-        self.default_lambda = UserProjectLambda(self.user_embedding, self.beta, square)
+        self.default_lambda = UserProjectLambda(self.user_embedding, len(project_embeddings), self.beta, square)
 
     def update(self, session, delta_time, derivative=True):
         if session.pid not in self.project_lambdas:
             self.project_lambdas[session.pid] = copy.deepcopy(self.default_lambda)
         for project_id in self.project_lambdas.keys():
             coeff = 1 if project_id == session.pid else self.other_project_importance
-            self.project_lambdas[session.pid].update(self.project_embeddings[project_id], session.n_tasks, delta_time,
-                                                     coeff, derivative)
-            self.default_lambda.update(self.project_embeddings[project_id], session.n_tasks, delta_time,
+            self.project_lambdas[session.pid].update(self.project_embeddings[project_id], project_id, session.n_tasks,
+                                                     delta_time, coeff, derivative)
+            self.default_lambda.update(self.project_embeddings[project_id], project_id, session.n_tasks, delta_time,
                                        self.other_project_importance, derivative)
 
     def get(self, project_id, derivative=False):
@@ -234,8 +223,6 @@ class Model2Lambda(Model):
 
     def _session_likelihood(self, user_session, user_lambda):
         cur_lambda2 = user_lambda.get(user_session.pid) ** 2
-        if math.isnan(cur_lambda2):
-            print("Is None")
         val = -np.exp(-cur_lambda2 * (user_session.pr_delta + self.eps)) + np.exp(
             -cur_lambda2 * max(0, user_session.pr_delta - self.eps))
         if not (0 <= val <= 1):
@@ -257,7 +244,7 @@ class Model2Lambda(Model):
         if cur_ll_d > 100:
             print(cur_ll_d, tau)
         users_derivatives[user_id] += cur_ll_d * lam_user_d
-        project_derivatives[user_session.pid] += cur_ll_d * lam_projects_d
+        project_derivatives += cur_ll_d * lam_projects_d
 
     def _update_last_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
         lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
