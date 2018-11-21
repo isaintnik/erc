@@ -4,7 +4,6 @@ import numpy as np
 from collections import namedtuple
 import warnings
 
-now_ts = 1541019601  # 2018-11-01 00:00:01
 
 USession = namedtuple('USession', 'pid start_ts end_ts pr_delta n_tasks')
 
@@ -24,16 +23,17 @@ class UserProjectLambda:
     def update(self, project_embedding, project_id, n_tasks, delta_time, coeff):
         e = np.exp(-self.beta * delta_time)
         ua = self.user_embedding @ project_embedding
-        self.numerator = e * self.numerator + coeff * ua  # * n_tasks * (ua if self.square else 1)
+        self.numerator = e * self.numerator + coeff * ua * n_tasks  # * (ua if self.square else 1)
         if math.isnan(self.numerator):
             print(e, coeff, n_tasks, ua)
         self.denominator = e * self.denominator + coeff
         if self.derivative:
-            self.user_d_numerator = e * self.user_d_numerator + coeff * project_embedding * n_tasks  # * (2 * ua if self.square else 1)
+            self.user_d_numerator = e * self.user_d_numerator + coeff * project_embedding * n_tasks
+            # * (2 * ua if self.square else 1)
             self.project_d_numerators *= e
             if project_id is not None:
-                self.project_d_numerators[
-                    project_id] += coeff * self.user_embedding * n_tasks  # * (2 * ua if self.square else 1)
+                self.project_d_numerators[project_id] += coeff * self.user_embedding * n_tasks
+                # * (2 * ua if self.square else 1)
 
     def get(self):
         cur_lambda = self.numerator / self.denominator / self.avg_time_between_sessions
@@ -144,7 +144,7 @@ class Model:
                         self._update_session_derivative(user_session, user_id, user_lambda, users_derivatives,
                                                         project_derivatives)
                     else:
-                        ll += self._update_session_likelihood(user_session, user_lambda)
+                        ll += self._session_likelihood(user_session, user_lambda)
                     user_lambda.update(self.project_embeddings[user_session.pid], user_session,
                                        user_session.start_ts - user_history[i - 1].start_ts)
                 else:
@@ -155,12 +155,24 @@ class Model:
                     self._update_last_derivative(user_session, user_id, user_lambda, users_derivatives,
                                                  project_derivatives)
                 else:
-                    ll += self._update_last_likelihood(user_session, user_lambda)
+                    ll += self._last_likelihood(user_session, user_lambda)
         if derivative:
             if math.isnan(users_derivatives[0][0]) or math.isnan(project_derivatives[0][0]):
                 print(users_derivatives)
             return users_derivatives, project_derivatives
         return ll
+
+    def _session_likelihood(self, user_session, user_lambda):
+        raise NotImplementedError()
+
+    def _last_likelihood(self, user_session, user_lambda):
+        raise NotImplementedError()
+
+    def _update_session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
+        raise NotImplementedError()
+
+    def _update_last_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
+        raise NotImplementedError()
 
     def optimization_step(self):
         users_derivatives, project_derivatives = self.ll_derivative()
@@ -182,12 +194,12 @@ class Model2UA(Model):
                        users_embeddings_prior, projects_embeddings_prior)
         self.square = True
 
-    def _update_session_likelihood(self, user_session, user_lambda):
+    def _session_likelihood(self, user_session, user_lambda):
         cur_lambda = user_lambda.get(user_session.pid)
         return np.log(-np.exp(-cur_lambda * (user_session.pr_delta + self.eps)) +
                       np.exp(-cur_lambda * (user_session.pr_delta - self.eps)))
 
-    def _update_last_likelihood(self, user_session, user_lambda):
+    def _last_likelihood(self, user_session, user_lambda):
         return -user_lambda.get(user_session.pid) * user_session.pr_delta
 
     def _update_session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
@@ -212,7 +224,7 @@ class Model2Lambda(Model):
                        users_embeddings_prior, projects_embeddings_prior)
         self.square = False
 
-    def _update_session_likelihood(self, user_session, user_lambda):
+    def _session_likelihood(self, user_session, user_lambda):
         cur_lambda2 = user_lambda.get(user_session.pid) ** 2
         if math.isnan(cur_lambda2):
             print("Is None")
@@ -230,7 +242,7 @@ class Model2Lambda(Model):
                 warnings.warn("in ll", RuntimeWarning)
         return ans
 
-    def _update_last_likelihood(self, user_session, user_lambda):
+    def _last_likelihood(self, user_session, user_lambda):
         return -(user_lambda.get(user_session.pid) ** 2) * user_session.pr_delta
 
     def _update_session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
@@ -269,7 +281,7 @@ class ModelExpLambda(Model):
         Model.__init__(self, users_history, dim, learning_rate, beta, eps, other_project_importance)
         self.square = False
 
-    def _update_session_likelihood(self, user_session, user_lambda):
+    def _session_likelihood(self, user_session, user_lambda):
         exp_lambda = np.exp(user_lambda.get(user_session.pid))
         if math.isnan(exp_lambda):
             print("Is None")
@@ -281,7 +293,7 @@ class ModelExpLambda(Model):
         return np.log(-np.exp(-exp_lambda * (user_session.pr_delta + self.eps)) +
                       np.exp(-exp_lambda * max(0, user_session.pr_delta - self.eps)))
 
-    def _update_last_likelihood(self, user_session, user_lambda):
+    def _last_likelihood(self, user_session, user_lambda):
         return -(np.exp(user_lambda.get(user_session.pid))) * user_session.pr_delta
 
     def _update_session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):

@@ -168,4 +168,5 @@ if __name__ == "__main__":
     # correct_derivative_test()
     # convergence_test()
     # synthetic_test()
+    np.random.seed(3)
     init_compare_test()
