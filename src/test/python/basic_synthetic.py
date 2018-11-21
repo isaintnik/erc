@@ -12,8 +12,8 @@ def generate_synthetic(users, projects):
 
 
 def generate_vectors(users_num, projects_num, dim, std_dev=0.2):
-    return np.array([np.random.normal(0, std_dev, dim) for _ in range(users_num)]), \
-           np.array([np.random.normal(0, std_dev, dim) for _ in range(projects_num)])
+    return np.array([np.random.normal(0.5, std_dev, dim) for _ in range(users_num)]), \
+           np.array([np.random.normal(0.5, std_dev, dim) for _ in range(projects_num)])
 
 
 def vecs_dist(vecs1, vecs2):
@@ -72,18 +72,18 @@ def correct_derivative_test():
 
 def convergence_test():
     users_num = 2
-    projects_num = 2
+    projects_num = 3
     dim = 3
     users, projects = generate_vectors(users_num, projects_num, dim)
     users_history = generate_synthetic(users, projects)
-    model = Model2UA(users_history, dim, learning_rate=0.003, eps=10)
-    # model = Model2Lambda(users_history, dim, learning_rate=0.003, eps=10)
-    for i in range(100):
-        if i % 5 == 0:
+    # model = Model2UA(users_history, dim, learning_rate=0.003, eps=10)
+    model = Model2Lambda(users_history, dim, beta=0.001, learning_rate=0.005, eps=10)
+    for i in range(101):
+        if i % 20 == 0:
             print("{}-th iter, ll = {}".format(i, model.log_likelihood()))
         model.optimization_step()
-    print(model.user_embeddings)
-    print(model.project_embeddings)
+    print(interaction_matrix(users, projects))
+    print(interaction_matrix(model.user_embeddings, model.project_embeddings))
 
 
 def interaction_matrix(users, projects):
@@ -97,30 +97,75 @@ def synthetic_test():
     beta = 0.001
     other_project_importance = 0.3
     users, projects = generate_vectors(users_num, projects_num, dim, std_dev=0.1)
-    # print(users)
     X = [StepGenerator(user_embedding=user, project_embeddings=projects, beta=beta,
-                       other_project_importance=other_project_importance, max_lifetime=50000)
+                       other_project_importance=other_project_importance, max_lifetime=50000, verbose=False)
              .generate_user_steps() for user in users]
-    print(len(X))
     print(len(X[0]))
-    # print(X[0][0])
-    # print(X[0])
     print("data generated")
-    model = Model2Lambda(X, dim, learning_rate=0.003, eps=20, beta=beta,
-                         other_project_importance=other_project_importance)
+    model = Model2Lambda(X, dim, learning_rate=0.0001, eps=20, beta=beta,
+                         other_project_importance=other_project_importance,
+                         projects_embeddings_prior=projects)
     # model = Model2UA(X, dim, learning_rate=0.003, eps=30, beta=beta,
     #                  other_project_importance=other_project_importance)
-    for i in range(100):
+    start_interaction = interaction_matrix(users, projects)
+    init_interaction = interaction_matrix(model.user_embeddings, model.project_embeddings)
+    for i in range(41):
         if i % 20 == 0:
-            print("{}-th iter, ll = {}".format(i, model.log_likelihood()))
+            inter_norm = np.linalg.norm(
+                interaction_matrix(model.user_embeddings, model.project_embeddings) - start_interaction)
+            print("{}-th iter, ll = {}, inter_norm = {}".format(i, model.log_likelihood(), inter_norm))
         model.optimization_step()
-    print(interaction_matrix(users, projects))
-    # print(model.user_embeddings)
-    print(interaction_matrix(model.user_embeddings, model.project_embeddings))
-    # print(model.project_embeddings)
+    end_interaction = interaction_matrix(model.user_embeddings, model.project_embeddings)
+    print(np.linalg.norm(start_interaction - init_interaction))
+    print(np.linalg.norm(start_interaction - end_interaction))
+
+
+def init_compare_test():
+    users_num = 1
+    projects_num = 1
+    dim = 2
+    beta = 0.001
+    other_project_importance = 0.3
+    users, projects = generate_vectors(users_num, projects_num, dim, std_dev=0.2)
+    X = [StepGenerator(user_embedding=user, project_embeddings=projects, beta=beta,
+                       other_project_importance=other_project_importance, max_lifetime=50000, verbose=False)
+             .generate_user_steps() for user in users]
+    print(len(X[0]))
+    print("data generated")
+    model1 = Model2Lambda(X, dim, learning_rate=0.00001, eps=20, beta=beta,
+                         other_project_importance=other_project_importance,
+                         users_embeddings_prior=np.array([np.random.normal(0.5, 0.2, dim)
+                                                          for _ in range(users_num)]),
+                         projects_embeddings_prior=np.array([np.random.normal(0.5, 0.2, dim)
+                                                             for _ in range(users_num)]))
+    model2 = Model2Lambda(X, dim, learning_rate=0.00001, eps=20, beta=beta,
+                          other_project_importance=other_project_importance,
+                          users_embeddings_prior=users,
+                          projects_embeddings_prior=projects)
+    start_interaction = interaction_matrix(users, projects)
+    init_interaction = interaction_matrix(model1.user_embeddings, model1.project_embeddings)
+    for i in range(21):
+        if i % 3 == 0:
+        # if i in [0, 1, 2, 5, 7, 10, 15, 20]:
+            inter_norm1 = np.linalg.norm(
+                interaction_matrix(model1.user_embeddings, model1.project_embeddings) - start_interaction)
+            inter_norm2 = np.linalg.norm(
+                interaction_matrix(model2.user_embeddings, model2.project_embeddings) - start_interaction)
+            print("{}-th iter, ll = {}, inter_norm = {}".format(i, model1.log_likelihood(), inter_norm1))
+            print("{}-th iter, ll = {}, inter_norm = {}".format(i, model2.log_likelihood(), inter_norm2))
+        model1.optimization_step()
+        model2.optimization_step()
+    end_interaction1 = interaction_matrix(model1.user_embeddings, model1.project_embeddings)
+    end_interaction2 = interaction_matrix(model2.user_embeddings, model2.project_embeddings)
+    print(np.linalg.norm(start_interaction - init_interaction))
+    print(np.linalg.norm(start_interaction - end_interaction1))
+    print(np.linalg.norm(start_interaction - end_interaction2))
+    print(start_interaction)
+    print(end_interaction1)
 
 
 if __name__ == "__main__":
     # correct_derivative_test()
     # convergence_test()
-    synthetic_test()
+    # synthetic_test()
+    init_compare_test()

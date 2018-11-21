@@ -59,7 +59,7 @@ def equal_interaction_test():
     u_e = np.ones((dim,)) * 0.5
     p_e = [np.ones((dim,)) * 0.2] * 3
     sg = StepGenerator(user_embedding=u_e, project_embeddings=p_e, beta=beta, other_project_importance=0.3,
-                       max_lifetime=500, verbose=True)
+                       max_lifetime=500000, verbose=False)
     print([project_embedding @ sg.user_embedding for project_embedding in sg.project_embeddings])
     gen_summary = sg.generate_user_steps()
     print(Counter([session.pid for session in gen_summary]))
@@ -110,6 +110,6 @@ def short_and_long_interaction_test():
 
 if __name__ == "__main__":
     equal_interaction_test()
-    # different_interaction_one_sign_test()
-    # different_interaction_diff_sign_test()
-    # short_and_long_interaction_test()
+    different_interaction_one_sign_test()
+    different_interaction_diff_sign_test()
+    short_and_long_interaction_test()

@@ -24,9 +24,10 @@ class StepGenerator:
         self.project_embeddings = project_embeddings if project_embeddings is not None else [np.random.randn(dim) for _
                                                                                              in range(n_projects)]
         self.user_lambdas = UserLambda(user_embedding=self.user_embedding,
-                                       project_embeddings=self.project_embeddings,
+                                       n_projects=len(self.project_embeddings),
                                        beta=self.beta,
                                        other_project_importance=self.other_project_importance,
+                                       derivative=False,
                                        square=False)
 
     def _select_project(self, projects_ids, last_time_done, current_ts):
@@ -89,7 +90,7 @@ class StepGenerator:
             if self.verbose:
                 print("3.", user_session)
                 print(np.exp(-self.beta * (ts_end - latest_done_project_ts)))
-            self.user_lambdas.update(user_session, ts_end - latest_done_project_ts, False)
+            self.user_lambdas.update(self.project_embeddings[pid], user_session, ts_end - latest_done_project_ts)
             latest_done_project_ts = ts_end
             generation_summary.append(user_session)
             if self.verbose:
