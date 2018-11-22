@@ -30,26 +30,7 @@ class StepGenerator:
                                        derivative=False,
                                        square=False)
 
-    def _select_project(self, projects_ids, last_time_done, current_ts):
-
-        # def next_time(project_id):
-        #     first_delta = np.random.exponential(scale=1 / self.user_lambdas.get(project_id) ** 2)
-        #     delta = first_delta
-        #     while last_time_done[pid] + delta < current_ts:
-        #         delta = np.random.exponential(scale=1 / self.user_lambdas.get(project_id) ** 2)
-        #     return delta, first_delta
-        #
-        # nearest_pid = (projects_ids[0], 1e9, 1e9)
-        # for pid in projects_ids:
-        #     pr_delta, inner_delta = next_time(pid)
-        #     if last_time_done[pid] + pr_delta < nearest_pid[1]:
-        #         nearest_pid = (pid, pr_delta, inner_delta)
-        # return nearest_pid
-
-        # for pid in projects_ids:
-        #     if 1 / self.user_lambdas.get(pid) ** 2 < 0:
-        #         print(1 / self.user_lambdas.get(pid) ** 2)
-        #         assert 1 / self.user_lambdas.get(pid) ** 2
+    def _select_project_at_current_time(self, projects_ids):
         time_deltas = {pid: np.random.exponential(scale=1 / self.user_lambdas.get(pid) ** 2) for pid in projects_ids}
         # time_deltas = {pid: np.random.exponential(scale=1 / np.exp(self.user_lambdas.get(pid))) for pid in projects_ids}
         pid_chosen, time_delta = min(time_deltas.items(), key=lambda item: item[1])
@@ -59,31 +40,54 @@ class StepGenerator:
             print({pid: self.user_lambdas.get(pid) for pid in projects_ids})
         return pid_chosen, time_delta, time_delta
 
+    def _select_project_step_by_step(self, projects_ids, last_time_done, current_ts):
+        time_deltas = {pid: last_time_done[pid] + np.random.exponential(scale=1 / self.user_lambdas.get(pid) ** 2) for pid in projects_ids}
+        pid, inner_delta = min(time_deltas.items(), key=lambda item: item[1])
+        inner_delta -= last_time_done[pid]
+        time_delta = np.random.exponential(scale=1 / self.user_lambdas.get(pid) ** 2)
+        if self.verbose:
+            print({pid: 1 / self.user_lambdas.get(pid) ** 2 for pid in projects_ids})
+            print({pid: self.user_lambdas.get(pid) for pid in projects_ids})
+        return pid, time_delta, inner_delta
+
+    def _select_project_with_future_steps(self, projects_ids, last_time_done, next_time_done, current_ts):
+        pid, start_ts = min(next_time_done.items(), key=lambda item: item[1])
+        inner_delta = start_ts - last_time_done[pid]
+        time_delta = start_ts - current_ts
+        last_time_done[pid] = next_time_done[pid]
+        next_time_done[pid] = next_time_done[pid] + np.random.exponential(scale=1 / self.user_lambdas.get(pid) ** 2)
+        if self.verbose:
+            print({pid: 1 / self.user_lambdas.get(pid) ** 2 for pid in projects_ids})
+            print({pid: self.user_lambdas.get(pid) for pid in projects_ids})
+        return pid, time_delta, inner_delta
+
     def generate_user_steps(self):
         current_ts = 0
         generation_summary = []
         projects_ids = list(range(len(self.project_embeddings)))
         last_time_done = {pid: 0 for pid in projects_ids}
+        next_time_done = {pid: np.random.exponential(scale=1 / self.user_lambdas.get(pid) ** 2) for pid in projects_ids}
         latest_done_project_ts = 0
 
-        k = 0
-        while current_ts < self.max_lifetime and k < 100:
-            # k += 1
+        while current_ts < self.max_lifetime:
 
-            pid, time_delta, inner_delta = self._select_project(projects_ids, last_time_done, current_ts)
+            # pid, time_delta, inner_delta = self._select_project_at_current_time(projects_ids)
+            pid, time_delta, inner_delta = self._select_project_step_by_step(projects_ids, last_time_done, current_ts)
+            # pid, time_delta, inner_delta = self._select_project_with_future_steps(projects_ids, last_time_done,
+                                                                                  # next_time_done, current_ts)
             if self.verbose:
                 print("1.", pid, time_delta, inner_delta)
             n_tasks = np.random.geometric(1 / AVG_TASKS_ON_SESSION)
+            n_tasks = np.log(n_tasks)
             # n_tasks = 1
-            session_time = sum([abs(np.random.normal(AVG_TIME_FOR_TASK, STD_TIME_FOR_TASK)) + 2 for _ in range(n_tasks)])
-            # session_time = AVG_TIME_FOR_TASK
+            session_time = sum([abs(np.random.normal(AVG_TIME_FOR_TASK, STD_TIME_FOR_TASK)) + 1 for _ in range(int(n_tasks))])
             if self.verbose:
                 print("2.", n_tasks, session_time)
 
             # ts_start = last_time_done[pid] + time_delta
             ts_start = current_ts + time_delta
             ts_end = ts_start + session_time
-            last_time_done[pid] += time_delta + session_time
+            last_time_done[pid] = ts_end
             current_ts = ts_end
 
             user_session = USession(pid, ts_start, ts_end, inner_delta, n_tasks)
@@ -96,4 +100,9 @@ class StepGenerator:
             if self.verbose:
                 print()
 
+        for pid in last_time_done.keys():
+            user_session = USession(pid, self.max_lifetime, self.max_lifetime + 1, self.max_lifetime - last_time_done[pid], 0)
+            generation_summary.append(user_session)
+
+        print({pid: self.user_lambdas.get(pid) for pid in projects_ids})
         return generation_summary
