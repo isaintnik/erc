@@ -21,19 +21,15 @@ class UserProjectLambda:
         self.avg_time_between_sessions = 5
 
     def update(self, project_embedding, project_id, n_tasks, delta_time, coeff):
-        e = np.exp(-self.beta * delta_time)
+        e = np.exp(-self.beta)  # * delta_time)
         ua = self.user_embedding @ project_embedding
         self.numerator = e * self.numerator + coeff * ua * n_tasks  # * (ua if self.square else 1)
-        if math.isnan(self.numerator):
-            print(e, coeff, n_tasks, ua)
         self.denominator = e * self.denominator + coeff
         if self.derivative:
-            self.user_d_numerator = e * self.user_d_numerator + coeff * project_embedding * n_tasks
-            # * (2 * ua if self.square else 1)
+            self.user_d_numerator = e * self.user_d_numerator + coeff * project_embedding * n_tasks  # * (2 * ua if self.square else 1)
             self.project_d_numerators *= e
             if project_id is not None:
-                self.project_d_numerators[project_id] += coeff * self.user_embedding * n_tasks
-                # * (2 * ua if self.square else 1)
+                self.project_d_numerators[project_id] += coeff * self.user_embedding * n_tasks  # * (2 * ua if self.square else 1)
 
     def get(self):
         cur_lambda = self.numerator / self.denominator / self.avg_time_between_sessions
@@ -84,9 +80,10 @@ class Model:
         self.users_history = users_history
         self.emb_dim = dim
         self.learning_rate = learning_rate
+        self.decay_rate = 0.97
         self.beta = beta
         self.eps = eps
-        self.parity = 0
+        self.data_size = sum([len(user) for user in users_history])
         self.other_project_importance = other_project_importance
 
         self.user_embeddings = np.array(
@@ -178,13 +175,9 @@ class Model:
         users_derivatives, project_derivatives = self.ll_derivative()
         if math.isnan(users_derivatives[0][0]):
             print(users_derivatives)
-        self.user_embeddings += self.learning_rate * users_derivatives
-        self.project_embeddings += self.learning_rate * project_derivatives
-        # if self.parity % 2 == 0:
-        #     self.user_embeddings += self.learning_rate * users_derivatives
-        # else:
-        #     self.project_embeddings += self.learning_rate * project_derivatives
-        # self.parity += 1
+        self.user_embeddings += users_derivatives * self.learning_rate / self.data_size
+        self.project_embeddings += project_derivatives * self.learning_rate / self.data_size
+        self.learning_rate *= self.decay_rate
 
 
 class Model2UA(Model):
@@ -262,9 +255,6 @@ class Model2Lambda(Model):
 
         if math.isnan(cur_ll_d):
             cur_ll_d = 0
-        if -exp_plus + exp_minus < 1e-7:
-            pass
-            # print(2 * lam * ((tau + self.eps) * exp_plus - max(0, tau - self.eps) * exp_minus), -exp_plus + exp_minus)
         users_derivatives[user_id] += cur_ll_d * lam_user_d
         project_derivatives += cur_ll_d * lam_projects_d
         if math.isnan(users_derivatives[0][0]) or math.isnan(project_derivatives[0][0]):
