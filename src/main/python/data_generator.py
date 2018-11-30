@@ -1,5 +1,5 @@
 import numpy as np
-from src.main.python.model import UserLambda, USession
+from src.main.python.model import UserLambda, USession, InteractionCalculator
 
 USER_IDX = 0
 TS_START_IDX = 1
@@ -28,7 +28,9 @@ class StepGenerator:
                                        beta=self.beta,
                                        other_project_importance=self.other_project_importance,
                                        derivative=False,
-                                       square=False)
+                                       square=False,
+                                       interactions_supplier=InteractionCalculator(
+                                           [self.user_embedding], self.project_embeddings).get_user_supplier(0))
 
     def _select_project_at_current_time(self, projects_ids):
         time_deltas = {pid: np.random.exponential(scale=1 / self.user_lambdas.get(pid) ** 2) for pid in projects_ids}
@@ -94,7 +96,7 @@ class StepGenerator:
             if self.verbose:
                 print("3.", user_session)
                 print(np.exp(-self.beta * (ts_end - latest_done_project_ts)))
-            self.user_lambdas.update(self.project_embeddings[pid], user_session, ts_end - latest_done_project_ts)
+            self.user_lambdas.update(self.project_embeddings[pid], pid, user_session, ts_end - latest_done_project_ts)
             latest_done_project_ts = ts_end
             generation_summary.append(user_session)
             if self.verbose:

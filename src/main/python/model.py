@@ -1,15 +1,29 @@
 import copy
 import math
-import numpy as np
 from collections import namedtuple
 import warnings
+import numpy as np
+# import torch
 
 
 USession = namedtuple('USession', 'pid start_ts end_ts pr_delta n_tasks')
 
 
+class InteractionCalculator:
+    def __init__(self, user_embeddings, project_embeddings):
+        users_matrix = np.concatenate([np.expand_dims(i, 0) for i in user_embeddings])
+        projects_matrix = np.concatenate([np.expand_dims(i, 0) for i in project_embeddings])
+        self.interactions = users_matrix @ projects_matrix.T
+
+    def get_interaction(self, user_id, project_id):
+        return self.interactions[user_id, project_id]
+
+    def get_user_supplier(self, user_id):
+        return lambda project_id: self.interactions[user_id, project_id]
+
+
 class UserProjectLambda:
-    def __init__(self, user_embedding, n_projects, beta, derivative=False, square=False):
+    def __init__(self, user_embedding, n_projects, beta, interactions_supplier, *, derivative=False, square=False):
         self.numerator = 10
         self.denominator = 10
         self.beta = beta
@@ -19,10 +33,11 @@ class UserProjectLambda:
         self.user_d_numerator = np.zeros_like(user_embedding)
         self.project_d_numerators = np.zeros((n_projects, len(user_embedding)))
         self.avg_time_between_sessions = 5
+        self.interactions_supplier = interactions_supplier
 
     def update(self, project_embedding, project_id, n_tasks, delta_time, coeff):
         e = np.exp(-self.beta)  # * delta_time)
-        ua = self.user_embedding @ project_embedding
+        ua = self.interactions_supplier(project_id)
         self.numerator = e * self.numerator + coeff * ua * n_tasks  # * (ua if self.square else 1)
         self.denominator = e * self.denominator + coeff
         if self.derivative:
@@ -47,7 +62,7 @@ class UserProjectLambda:
 
 
 class UserLambda:
-    def __init__(self, user_embedding, n_projects, beta, other_project_importance,
+    def __init__(self, user_embedding, n_projects, beta, other_project_importance, interactions_supplier,
                  derivative=False, square=False):
         self.project_lambdas = {}
         self.beta = beta
@@ -56,16 +71,16 @@ class UserLambda:
         self.user_embedding = user_embedding
         if math.isnan(user_embedding[0]):
             print("u_e is nan")
-        self.default_lambda = UserProjectLambda(self.user_embedding, n_projects, self.beta, derivative, square)
+        self.default_lambda = UserProjectLambda(self.user_embedding, n_projects, self.beta, interactions_supplier,
+                                                derivative=derivative, square=square)
 
-    def update(self, project_embedding, session, delta_time):
+    def update(self, project_embedding, project_id, session, delta_time):
         if session.pid not in self.project_lambdas:
             self.project_lambdas[session.pid] = copy.deepcopy(self.default_lambda)
-        for project_id in self.project_lambdas.keys():
-            coeff = 1 if project_id == session.pid else self.other_project_importance
-            self.project_lambdas[project_id].update(project_embedding, project_id, session.n_tasks,
-                                                    delta_time, coeff)
-        self.default_lambda.update(project_embedding, None, session.n_tasks,
+        for upd_project_id, upd_project in self.project_lambdas.items():
+            coefficient = 1 if upd_project_id == session.pid else self.other_project_importance
+            upd_project.update(project_embedding, project_id, session.n_tasks, delta_time, coefficient)
+        self.default_lambda.update(project_embedding, project_id, session.n_tasks,
                                    delta_time, self.other_project_importance)
 
     def get(self, project_id):
@@ -98,6 +113,7 @@ class Model:
                 [np.random.normal(0, 0.2, self.emb_dim) for _ in range(len(projects_set))])
         else:
             self.project_embeddings = projects_embeddings_prior
+        self.square = None
         # self.init_user_embeddings()
         # self.init_project_embeddings()
 
@@ -121,10 +137,12 @@ class Model:
         ll = 0.
         users_derivatives = np.zeros(self.user_embeddings.shape)
         project_derivatives = np.zeros(self.project_embeddings.shape)
+        interaction_calculator = InteractionCalculator(self.user_embeddings, self.project_embeddings)
         for user_id in range(len(self.users_history)):
             user_history = self.users_history[user_id]
             user_lambda = UserLambda(self.user_embeddings[user_id], len(project_derivatives), self.beta,
-                                     self.other_project_importance, derivative, self.square)
+                                     self.other_project_importance, interaction_calculator.get_user_supplier(user_id),
+                                     derivative, self.square)
             done_projects = set()
             last_times_sessions = set()
             for i, user_session in enumerate(user_history):
@@ -132,7 +150,7 @@ class Model:
                 if user_session.pid not in done_projects:
                     done_projects.add(user_session.pid)
                     if i > 0:
-                        user_lambda.update(self.project_embeddings[user_session.pid], user_session,
+                        user_lambda.update(self.project_embeddings[user_session.pid], user_session.pid, user_session,
                                            user_session.start_ts - user_history[i - 1].start_ts)
                     continue
 
@@ -142,7 +160,7 @@ class Model:
                                                         project_derivatives)
                     else:
                         ll += self._session_likelihood(user_session, user_lambda)
-                    user_lambda.update(self.project_embeddings[user_session.pid], user_session,
+                    user_lambda.update(self.project_embeddings[user_session.pid], user_session.pid, user_session,
                                        user_session.start_ts - user_history[i - 1].start_ts)
                 else:
                     last_times_sessions.add(user_session)
