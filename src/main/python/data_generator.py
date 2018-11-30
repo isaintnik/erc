@@ -96,7 +96,7 @@ class StepGenerator:
             if self.verbose:
                 print("3.", user_session)
                 print(np.exp(-self.beta * (ts_end - latest_done_project_ts)))
-            self.user_lambdas.update(self.project_embeddings[pid], pid, user_session, ts_end - latest_done_project_ts)
+            self.user_lambdas.update(self.project_embeddings[pid], user_session, ts_end - latest_done_project_ts)
             latest_done_project_ts = ts_end
             generation_summary.append(user_session)
             if self.verbose:

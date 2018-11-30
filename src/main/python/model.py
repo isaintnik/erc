@@ -74,19 +74,23 @@ class UserLambda:
         self.default_lambda = UserProjectLambda(self.user_embedding, n_projects, self.beta, interactions_supplier,
                                                 derivative=derivative, square=square)
 
-    def update(self, project_embedding, project_id, session, delta_time):
+    def update(self, project_embedding, session, delta_time):
         if session.pid not in self.project_lambdas:
             self.project_lambdas[session.pid] = copy.deepcopy(self.default_lambda)
-        for upd_project_id, upd_project in self.project_lambdas.items():
-            coefficient = 1 if upd_project_id == session.pid else self.other_project_importance
-            upd_project.update(project_embedding, project_id, session.n_tasks, delta_time, coefficient)
-        self.default_lambda.update(project_embedding, project_id, session.n_tasks,
+        for project_id, project_lambda in self.project_lambdas.items():
+            coefficient = 1 if project_id == session.pid else self.other_project_importance
+            project_lambda.update(project_embedding, project_id, session.n_tasks, delta_time, coefficient)
+        self.default_lambda.update(project_embedding, None, session.n_tasks,
                                    delta_time, self.other_project_importance)
 
     def get(self, project_id):
         if project_id not in self.project_lambdas.keys():
             return self.default_lambda.get()
         return self.project_lambdas[project_id].get()
+
+
+def interaction_matrix(users, projects):
+    return np.array([[u.T @ p for p in projects] for u in users])
 
 
 class Model:
@@ -150,7 +154,7 @@ class Model:
                 if user_session.pid not in done_projects:
                     done_projects.add(user_session.pid)
                     if i > 0:
-                        user_lambda.update(self.project_embeddings[user_session.pid], user_session.pid, user_session,
+                        user_lambda.update(self.project_embeddings[user_session.pid], user_session,
                                            user_session.start_ts - user_history[i - 1].start_ts)
                     continue
 
@@ -160,7 +164,7 @@ class Model:
                                                         project_derivatives)
                     else:
                         ll += self._session_likelihood(user_session, user_lambda)
-                    user_lambda.update(self.project_embeddings[user_session.pid], user_session.pid, user_session,
+                    user_lambda.update(self.project_embeddings[user_session.pid], user_session,
                                        user_session.start_ts - user_history[i - 1].start_ts)
                 else:
                     last_times_sessions.add(user_session)
@@ -171,6 +175,8 @@ class Model:
                                                  project_derivatives)
                 else:
                     ll += self._last_likelihood(user_session, user_lambda)
+            # if not derivative:
+            #     print({s.pid: user_lambda.project_lambdas[s.pid].get() for s in last_times_sessions})
         if derivative:
             if math.isnan(users_derivatives[0][0]) or math.isnan(project_derivatives[0][0]):
                 print(users_derivatives)
