@@ -9,12 +9,13 @@ import torch
 USession = namedtuple('USession', 'pid start_ts end_ts pr_delta n_tasks')
 
 
+def interaction_matrix(users, projects):
+    return users @ projects.t()
+
+
 class InteractionCalculator:
-    def __init__(self, user_embeddings, project_embeddings, *, device='cpu'):
-        users_matrix = torch.from_numpy(np.concatenate([np.expand_dims(i, 0) for i in user_embeddings])).to(device)
-        projects_matrix = torch.from_numpy(np.concatenate([np.expand_dims(i, 0) for i in project_embeddings])).\
-            to(device)
-        self.interactions = users_matrix @ projects_matrix.t()
+    def __init__(self, user_embeddings, project_embeddings):
+        self.interactions = interaction_matrix(user_embeddings, project_embeddings)
 
     def get_interaction(self, user_id, project_id):
         return self.interactions[user_id, project_id].item()
@@ -31,8 +32,8 @@ class UserProjectLambda:
         # self.square = square
         self.derivative = derivative
         self.user_embedding = user_embedding
-        self.user_d_numerator = np.zeros_like(user_embedding)
-        self.project_d_numerators = np.zeros((n_projects, len(user_embedding)))
+        self.user_d_numerator = torch.zeros_like(user_embedding)
+        self.project_d_numerators = torch.zeros(n_projects, len(user_embedding))
         self.avg_time_between_sessions = 5
         self.interactions_supplier = interactions_supplier
         self.lambda_project_id = None
@@ -109,30 +110,16 @@ class Model:
         self.square = square
         self.device = device
 
-        self.user_embeddings = np.array(
-            [np.random.normal(0, 0.2, self.emb_dim) for _ in range(len(self.users_history))]) \
-            if users_embeddings_prior is None else users_embeddings_prior
+        self.user_embeddings = users_embeddings_prior if users_embeddings_prior is not None \
+            else torch.randn(len(self.users_history), self.emb_dim) * 0.2
         if projects_embeddings_prior is None:
             projects_set = set()
             for user_history in self.users_history:
                 for session in user_history:
                     projects_set.add(session.pid)
-            self.project_embeddings = np.array(
-                [np.random.normal(0, 0.2, self.emb_dim) for _ in range(len(projects_set))])
+            self.project_embeddings = torch.randn(len(projects_set), self.emb_dim) * 0.2
         else:
             self.project_embeddings = projects_embeddings_prior
-        # self.init_user_embeddings()
-        # self.init_project_embeddings()
-
-    def init_user_embeddings(self):
-        self.user_embeddings = np.array([np.random.normal(0, 1, self.emb_dim) for _ in range(len(self.users_history))])
-
-    def init_project_embeddings(self):
-        projects_set = set()
-        for user_history in self.users_history:
-            for session in user_history:
-                projects_set.add(session.pid)
-        self.project_embeddings = np.array([np.random.normal(0, 1, self.emb_dim) for _ in range(len(projects_set))])
 
     def log_likelihood(self):
         return self._likelihood_derivative()
@@ -142,10 +129,9 @@ class Model:
 
     def _likelihood_derivative(self, derivative=False):
         ll = 0.
-        users_derivatives = np.zeros(self.user_embeddings.shape)
-        project_derivatives = np.zeros(self.project_embeddings.shape)
-        interaction_calculator = InteractionCalculator(self.user_embeddings, self.project_embeddings,
-                                                       device=self.device)
+        users_derivatives = torch.zeros_like(self.user_embeddings)
+        project_derivatives = torch.zeros_like(self.project_embeddings)
+        interaction_calculator = InteractionCalculator(self.user_embeddings, self.project_embeddings)
         for user_id in range(len(self.users_history)):
             user_history = self.users_history[user_id]
             user_lambda = UserLambda(self.user_embeddings[user_id], len(project_derivatives), self.beta,
@@ -216,8 +202,8 @@ class Model2UA(Model):
 
     def _session_likelihood(self, user_session, user_lambda):
         cur_lambda = user_lambda.get(user_session.pid)
-        return np.log(-np.exp(-cur_lambda * (user_session.pr_delta + self.eps)) +
-                      np.exp(-cur_lambda * (user_session.pr_delta - self.eps)))
+        return torch.log(-torch.exp(-cur_lambda * (user_session.pr_delta + self.eps)) +
+                         torch.exp(-cur_lambda * (user_session.pr_delta - self.eps)))
 
     def _last_likelihood(self, user_session, user_lambda):
         return -user_lambda.get(user_session.pid) * user_session.pr_delta
@@ -225,9 +211,9 @@ class Model2UA(Model):
     def _update_session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
         lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
         tau = user_session.pr_delta
-        cur_ll_d = ((tau + self.eps) * np.exp(-lam * (tau + self.eps)) -
-                    max(0, tau - self.eps) * np.exp(-lam * max(0, tau - self.eps))) / \
-                   (-np.exp(-lam * (tau + self.eps)) + np.exp(-lam * max(0, tau - self.eps)))
+        cur_ll_d = ((tau + self.eps) * torch.exp(-lam * (tau + self.eps)) -
+                    max(0, tau - self.eps) * torch.exp(-lam * max(0, tau - self.eps))) / \
+                   (-torch.exp(-lam * (tau + self.eps)) + torch.exp(-lam * max(0, tau - self.eps)))
         users_derivatives[user_id] += cur_ll_d * lam_user_d
         project_derivatives[user_session.pid] += cur_ll_d * lam_projects_d
 
