@@ -14,9 +14,9 @@ def generate_synthetic():
     ]
 
 
-def generate_vectors(users_num, projects_num, dim, std_dev=0.2):
-    return torch.randn(users_num, dim) * std_dev + 0.5, \
-           torch.randn(projects_num, dim) * std_dev + 0.5
+def generate_vectors(users_num, projects_num, dim, std_dev=0.2, device='cpu'):
+    return torch.randn(users_num, dim).double().to(device) * std_dev + 0.5, \
+           torch.randn(projects_num, dim).double().to(device) * std_dev + 0.5
 
 
 def vecs_dist(vecs1, vecs2):
@@ -122,14 +122,14 @@ def init_compare_test(no_cuda=False):
     other_project_importance = 0.3
     learning_rate = 0.9
     iter_num = 36
-    users, projects = generate_vectors(users_num, projects_num, dim, std_dev=0.2)
-    X = [StepGenerator(user_embedding=user, project_embeddings=projects, beta=beta,
+    device = 'cuda' if not no_cuda and torch.cuda.is_available() else 'cpu'
+    users, projects = generate_vectors(users_num, projects_num, dim, std_dev=0.2, device=device)
+    X = [StepGenerator(user_embedding=user.cpu(), project_embeddings=projects.cpu(), beta=beta,
                        other_project_importance=other_project_importance, max_lifetime=50000, verbose=False)
              .generate_user_steps() for user in users]
     print(len(X[0]))
     print("data generated")
-    device = 'cuda' if not no_cuda and torch.cuda.is_available() else 'cpu'
-    m1_init_users, m1_init_projects = generate_vectors(users_num, projects_num, dim)
+    m1_init_users, m1_init_projects = generate_vectors(users_num, projects_num, dim, device=device)
     model1 = Model2Lambda(X, dim, learning_rate=learning_rate, eps=20, beta=beta,
                           other_project_importance=other_project_importance,
                           users_embeddings_prior=m1_init_users,

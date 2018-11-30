@@ -15,7 +15,7 @@ def interaction_matrix(users, projects):
 
 class InteractionCalculator:
     def __init__(self, user_embeddings, project_embeddings):
-        self.interactions = interaction_matrix(user_embeddings, project_embeddings)
+        self.interactions = interaction_matrix(user_embeddings, project_embeddings).cpu()
 
     def get_interaction(self, user_id, project_id):
         return self.interactions[user_id, project_id].item()
@@ -25,42 +25,52 @@ class InteractionCalculator:
 
 
 class UserProjectLambda:
-    def __init__(self, user_embedding, n_projects, beta, interactions_supplier, *, derivative=False, square=False):
-        self.numerator = 10
-        self.denominator = 10
+    def __init__(self, user_embedding, n_projects, beta, interactions_supplier, *, derivative=False, square=False,
+                 device='cpu'):
+        self.numerator = torch.tensor(10, dtype=torch.float64)
+        self.denominator = torch.tensor(10, dtype=torch.float64)
         self.beta = beta
         # self.square = square
         self.derivative = derivative
         self.user_embedding = user_embedding
-        self.user_d_numerator = torch.zeros_like(user_embedding)
-        self.project_d_numerators = torch.zeros(n_projects, len(user_embedding))
-        self.avg_time_between_sessions = 5
+        self.user_d_numerator = torch.zeros_like(user_embedding, device=device)
+        self.project_d_numerators = torch.zeros(n_projects, len(user_embedding), dtype=torch.float64, device=device)
+        self.avg_time_between_sessions = torch.tensor(5, dtype=torch.float64)
         self.interactions_supplier = interactions_supplier
         self.lambda_project_id = None
+        self.device = device
+        self.e = torch.exp(torch.tensor(-beta, dtype=torch.float64))
+        self.ed = self.e.to(device)
 
     def set_project_id(self, project_id):
         self.lambda_project_id = project_id
 
     def update(self, project_embedding, session_project_id, n_tasks, delta_time, coeff):
-        e = np.exp(-self.beta)  # * delta_time)
-        ua = self.interactions_supplier(session_project_id)
-        self.numerator = e * self.numerator + coeff * ua * n_tasks  # * (ua if self.square else 1)
+        e = self.e
+        # e = np.exp(-self.beta)  # * delta_time)
+        ua = self.interactions_supplier[session_project_id]
+        # ua = self.interactions_supplier(session_project_id)
+        coeff_n_tasks = torch.tensor(coeff * n_tasks, dtype=torch.float64)
+        self.numerator = e * self.numerator + ua * coeff_n_tasks  # * (ua if self.square else 1)
         self.denominator = e * self.denominator + coeff
+        coeff_n_tasks = coeff_n_tasks.to(self.device)
         if self.derivative:
-            self.user_d_numerator = e * self.user_d_numerator + coeff * project_embedding * n_tasks  # * (2 * ua if self.square else 1)
-            self.project_d_numerators *= e
+            self.user_d_numerator = self.ed * self.user_d_numerator + project_embedding * coeff_n_tasks  # * (2 * ua if self.square else 1)
+            self.project_d_numerators *= self.ed
             if self.lambda_project_id is not None:
-                self.project_d_numerators[self.lambda_project_id] += coeff * self.user_embedding * n_tasks  # * (2 * ua if self.square else 1)
+                self.project_d_numerators[self.lambda_project_id] += self.user_embedding * coeff_n_tasks  # * (2 * ua if self.square else 1)
 
     def get(self):
-        cur_lambda = self.numerator / self.denominator / self.avg_time_between_sessions
+        div = self.denominator * self.avg_time_between_sessions
+        cur_lambda = self.numerator / div
+        div = div.to(self.device)
         if self.derivative:
-            user_derivative = self.user_d_numerator / self.denominator / self.avg_time_between_sessions
-            project_derivative = self.project_d_numerators / self.denominator / self.avg_time_between_sessions
-            if math.isnan(user_derivative[0]):
-                print(self.denominator)
-            if math.isnan(user_derivative[0]):
-                print(self.user_d_numerator)
+            user_derivative = self.user_d_numerator / div
+            project_derivative = self.project_d_numerators / div
+            # if math.isnan(user_derivative[0]):
+            #     print(self.denominator)
+            # if math.isnan(user_derivative[0]):
+            #     print(self.user_d_numerator)
             # if math.isnan(project_derivative[0]):
             #     print(self.project_d_numerators)
             return cur_lambda, user_derivative, project_derivative
@@ -69,7 +79,7 @@ class UserProjectLambda:
 
 class UserLambda:
     def __init__(self, user_embedding, n_projects, beta, other_project_importance, interactions_supplier,
-                 derivative=False, square=False):
+                 derivative=False, square=False, device='cpu'):
         self.project_lambdas = {}
         self.beta = beta
         self.derivative = derivative
@@ -78,7 +88,7 @@ class UserLambda:
         if math.isnan(user_embedding[0]):
             print("u_e is nan")
         self.default_lambda = UserProjectLambda(self.user_embedding, n_projects, self.beta, interactions_supplier,
-                                                derivative=derivative, square=square)
+                                                derivative=derivative, square=square, device=device)
 
     def update(self, project_embedding, session, delta_time):
         if session.pid not in self.project_lambdas:
@@ -111,13 +121,13 @@ class Model:
         self.device = device
 
         self.user_embeddings = users_embeddings_prior if users_embeddings_prior is not None \
-            else torch.randn(len(self.users_history), self.emb_dim) * 0.2
+            else torch.randn(len(self.users_history), self.emb_dim).to(device) * 0.2
         if projects_embeddings_prior is None:
             projects_set = set()
             for user_history in self.users_history:
                 for session in user_history:
                     projects_set.add(session.pid)
-            self.project_embeddings = torch.randn(len(projects_set), self.emb_dim) * 0.2
+            self.project_embeddings = torch.randn(len(projects_set), self.emb_dim).to(device) * 0.2
         else:
             self.project_embeddings = projects_embeddings_prior
 
@@ -128,15 +138,16 @@ class Model:
         return self._likelihood_derivative(derivative=True)
 
     def _likelihood_derivative(self, derivative=False):
-        ll = 0.
+        ll = torch.tensor(0., dtype=torch.float64)
         users_derivatives = torch.zeros_like(self.user_embeddings)
         project_derivatives = torch.zeros_like(self.project_embeddings)
         interaction_calculator = InteractionCalculator(self.user_embeddings, self.project_embeddings)
         for user_id in range(len(self.users_history)):
             user_history = self.users_history[user_id]
             user_lambda = UserLambda(self.user_embeddings[user_id], len(project_derivatives), self.beta,
-                                     self.other_project_importance, interaction_calculator.get_user_supplier(user_id),
-                                     derivative, self.square)
+                                     self.other_project_importance, interaction_calculator.interactions[user_id],
+                                     # self.other_project_importance, interaction_calculator.get_user_supplier(user_id),
+                                     derivative, self.square, device=self.device)
             done_projects = set()
             last_times_sessions = set()
             for i, user_session in enumerate(user_history):
@@ -233,17 +244,17 @@ class Model2Lambda(Model):
         cur_lambda2 = user_lambda.get(user_session.pid) ** 2
         if math.isnan(cur_lambda2):
             print("Is None")
-        val = -np.exp(-cur_lambda2 * (user_session.pr_delta + self.eps)) + np.exp(
-            -cur_lambda2 * max(0, user_session.pr_delta - self.eps))
+        val = -torch.exp(-cur_lambda2 * (user_session.pr_delta + self.eps)) + \
+            torch.exp(-cur_lambda2 * max(0, user_session.pr_delta - self.eps))
         if not (0 <= val <= 1):
             print(val)
             assert 0 <= val <= 1
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            ans = np.log(-np.exp(-cur_lambda2 * (user_session.pr_delta + self.eps)) +
-                      np.exp(-cur_lambda2 * max(0, user_session.pr_delta - self.eps)))
+            ans = torch.log(-torch.exp(-cur_lambda2 * (user_session.pr_delta + self.eps)) +
+                            torch.exp(-cur_lambda2 * max(0, user_session.pr_delta - self.eps)))
             if w and w[0].category == RuntimeWarning:
-                ans = -1e6
+                ans = torch.tensor(-1e6, dtype=torch.float64, device=self.device)
                 warnings.warn("in ll", RuntimeWarning)
         return ans
 
@@ -254,28 +265,29 @@ class Model2Lambda(Model):
         lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid)
         lam2 = lam ** 2
         tau = user_session.pr_delta
-        exp_plus = np.exp(-lam2 * (tau + self.eps))
-        exp_minus = np.exp(-lam2 * max(0, tau - self.eps))
+        exp_plus = torch.exp(-lam2 * (tau + self.eps))
+        exp_minus = torch.exp(-lam2 * max(0, tau - self.eps))
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            cur_ll_d = 2 * lam * ((tau + self.eps) * exp_plus - max(0, tau - self.eps) * exp_minus) / (
-                        -exp_plus + exp_minus)
+            cur_ll_d = 2 * lam * ((tau + self.eps) * exp_plus - max(0, tau - self.eps) * exp_minus) / \
+                (-exp_plus + exp_minus)
             if w and w[0].category == RuntimeWarning:
                 cur_ll_d = 0
                 warnings.warn("in derivative", RuntimeWarning)
 
         if math.isnan(cur_ll_d):
             cur_ll_d = 0
-        users_derivatives[user_id] += cur_ll_d * lam_user_d
-        project_derivatives += cur_ll_d * lam_projects_d
+        users_derivatives[user_id] += cur_ll_d.to(self.device) * lam_user_d
+        project_derivatives += cur_ll_d.to(self.device) * lam_projects_d
         if math.isnan(users_derivatives[0][0]) or math.isnan(project_derivatives[0][0]):
             print(users_derivatives)
 
     def _update_last_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
         lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid)
-        users_derivatives[user_id] -= 2 * lam * user_session.pr_delta * lam_user_d
-        project_derivatives -= 2 * lam * user_session.pr_delta * lam_projects_d
+        lam_del = (2 * lam * user_session.pr_delta).to(self.device)
+        users_derivatives[user_id] -= lam_del * lam_user_d
+        project_derivatives -= lam_del * lam_projects_d
 
 
 class ModelExpLambda(Model):
