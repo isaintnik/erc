@@ -1,4 +1,6 @@
 import time
+import argparse
+import torch
 from src.main.python.model import *
 from src.main.python.data_generator import *
 
@@ -116,7 +118,7 @@ def synthetic_test():
     print(np.linalg.norm(start_interaction - end_interaction))
 
 
-def init_compare_test():
+def init_compare_test(no_cuda=False):
     users_num = 10
     projects_num = 10
     dim = 2
@@ -130,16 +132,19 @@ def init_compare_test():
              .generate_user_steps() for user in users]
     print(len(X[0]))
     print("data generated")
+    device = 'cuda' if not no_cuda and torch.cuda.is_available() else 'cpu'
     model1 = Model2Lambda(X, dim, learning_rate=learning_rate, eps=20, beta=beta,
                           other_project_importance=other_project_importance,
                           users_embeddings_prior=np.array([np.random.normal(0.5, 0.2, dim)
                                                            for _ in range(users_num)]),
                           projects_embeddings_prior=np.array([np.random.normal(0.5, 0.2, dim)
-                                                             for _ in range(projects_num)]))
+                                                             for _ in range(projects_num)]),
+                          device=device)
     model2 = Model2Lambda(X, dim, learning_rate=learning_rate, eps=20, beta=beta,
                           other_project_importance=other_project_importance,
                           users_embeddings_prior=users,
-                          projects_embeddings_prior=projects)
+                          projects_embeddings_prior=projects,
+                          device=device)
     start_interaction = interaction_matrix(users, projects)
     init_interaction = interaction_matrix(model1.user_embeddings, model1.project_embeddings)
     for i in range(iter_num):
@@ -170,10 +175,14 @@ def init_compare_test():
 
 
 if __name__ == "__main__":
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument('--no_cuda', action='store_true')
+    args = arg_parser.parse_args()
+
     np.random.seed(3)
     start_time = time.time()
     # correct_derivative_test()
     # convergence_test()
     # synthetic_test()
-    init_compare_test()
+    init_compare_test(args.no_cuda)
     print("time:", time.time() - start_time)

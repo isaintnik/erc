@@ -3,23 +3,24 @@ import math
 from collections import namedtuple
 import warnings
 import numpy as np
-# import torch
+import torch
 
 
 USession = namedtuple('USession', 'pid start_ts end_ts pr_delta n_tasks')
 
 
 class InteractionCalculator:
-    def __init__(self, user_embeddings, project_embeddings):
-        users_matrix = np.concatenate([np.expand_dims(i, 0) for i in user_embeddings])
-        projects_matrix = np.concatenate([np.expand_dims(i, 0) for i in project_embeddings])
-        self.interactions = users_matrix @ projects_matrix.T
+    def __init__(self, user_embeddings, project_embeddings, *, device='cpu'):
+        users_matrix = torch.from_numpy(np.concatenate([np.expand_dims(i, 0) for i in user_embeddings])).to(device)
+        projects_matrix = torch.from_numpy(np.concatenate([np.expand_dims(i, 0) for i in project_embeddings])).\
+            to(device)
+        self.interactions = users_matrix @ projects_matrix.t()
 
     def get_interaction(self, user_id, project_id):
-        return self.interactions[user_id, project_id]
+        return self.interactions[user_id, project_id].item()
 
     def get_user_supplier(self, user_id):
-        return lambda project_id: self.interactions[user_id, project_id]
+        return lambda project_id: self.interactions[user_id, project_id].item()
 
 
 class UserProjectLambda:
@@ -96,7 +97,7 @@ class UserLambda:
 
 class Model:
     def __init__(self, users_history, dim, learning_rate=0.003, beta=0.001, eps=3600, other_project_importance=0.3,
-                 users_embeddings_prior=None, projects_embeddings_prior=None):
+                 users_embeddings_prior=None, projects_embeddings_prior=None, square=False, device='cpu'):
         self.users_history = users_history
         self.emb_dim = dim
         self.learning_rate = learning_rate
@@ -105,6 +106,8 @@ class Model:
         self.eps = eps
         self.data_size = sum([len(user) for user in users_history])
         self.other_project_importance = other_project_importance
+        self.square = square
+        self.device = device
 
         self.user_embeddings = np.array(
             [np.random.normal(0, 0.2, self.emb_dim) for _ in range(len(self.users_history))]) \
@@ -118,7 +121,6 @@ class Model:
                 [np.random.normal(0, 0.2, self.emb_dim) for _ in range(len(projects_set))])
         else:
             self.project_embeddings = projects_embeddings_prior
-        self.square = None
         # self.init_user_embeddings()
         # self.init_project_embeddings()
 
@@ -142,7 +144,8 @@ class Model:
         ll = 0.
         users_derivatives = np.zeros(self.user_embeddings.shape)
         project_derivatives = np.zeros(self.project_embeddings.shape)
-        interaction_calculator = InteractionCalculator(self.user_embeddings, self.project_embeddings)
+        interaction_calculator = InteractionCalculator(self.user_embeddings, self.project_embeddings,
+                                                       device=self.device)
         for user_id in range(len(self.users_history)):
             user_history = self.users_history[user_id]
             user_lambda = UserLambda(self.user_embeddings[user_id], len(project_derivatives), self.beta,
@@ -207,10 +210,9 @@ class Model:
 
 class Model2UA(Model):
     def __init__(self, users_history, dim, learning_rate=0.01, beta=0.01, eps=3600, other_project_importance=0.5,
-                 users_embeddings_prior=None, projects_embeddings_prior=None):
+                 users_embeddings_prior=None, projects_embeddings_prior=None, device='cpu'):
         Model.__init__(self, users_history, dim, learning_rate, beta, eps, other_project_importance,
-                       users_embeddings_prior, projects_embeddings_prior)
-        self.square = True
+                       users_embeddings_prior, projects_embeddings_prior, square=True, device=device)
 
     def _session_likelihood(self, user_session, user_lambda):
         cur_lambda = user_lambda.get(user_session.pid)
@@ -237,10 +239,9 @@ class Model2UA(Model):
 
 class Model2Lambda(Model):
     def __init__(self, users_history, dim, learning_rate=0.01, beta=0.01, eps=3600, other_project_importance=0.5,
-                 users_embeddings_prior=None, projects_embeddings_prior=None):
+                 users_embeddings_prior=None, projects_embeddings_prior=None, device='cpu'):
         Model.__init__(self, users_history, dim, learning_rate, beta, eps, other_project_importance,
-                       users_embeddings_prior, projects_embeddings_prior)
-        self.square = False
+                       users_embeddings_prior, projects_embeddings_prior, square=False, device=device)
 
     def _session_likelihood(self, user_session, user_lambda):
         cur_lambda2 = user_lambda.get(user_session.pid) ** 2
@@ -292,9 +293,10 @@ class Model2Lambda(Model):
 
 
 class ModelExpLambda(Model):
-    def __init__(self, users_history, dim, learning_rate=0.01, beta=0.01, eps=3600, other_project_importance=0.5):
-        Model.__init__(self, users_history, dim, learning_rate, beta, eps, other_project_importance)
-        self.square = False
+    def __init__(self, users_history, dim, learning_rate=0.01, beta=0.01, eps=3600, other_project_importance=0.5,
+                 device='cpu'):
+        Model.__init__(self, users_history, dim, learning_rate, beta, eps, other_project_importance, square=False,
+                       device=device)
 
     def _session_likelihood(self, user_session, user_lambda):
         exp_lambda = np.exp(user_lambda.get(user_session.pid))
