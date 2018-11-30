@@ -34,17 +34,21 @@ class UserProjectLambda:
         self.project_d_numerators = np.zeros((n_projects, len(user_embedding)))
         self.avg_time_between_sessions = 5
         self.interactions_supplier = interactions_supplier
+        self.lambda_project_id = None
 
-    def update(self, project_embedding, project_id, n_tasks, delta_time, coeff):
+    def set_project_id(self, project_id):
+        self.lambda_project_id = project_id
+
+    def update(self, project_embedding, session_project_id, n_tasks, delta_time, coeff):
         e = np.exp(-self.beta)  # * delta_time)
-        ua = self.interactions_supplier(project_id)
+        ua = self.interactions_supplier(session_project_id)
         self.numerator = e * self.numerator + coeff * ua * n_tasks  # * (ua if self.square else 1)
         self.denominator = e * self.denominator + coeff
         if self.derivative:
             self.user_d_numerator = e * self.user_d_numerator + coeff * project_embedding * n_tasks  # * (2 * ua if self.square else 1)
             self.project_d_numerators *= e
-            if project_id is not None:
-                self.project_d_numerators[project_id] += coeff * self.user_embedding * n_tasks  # * (2 * ua if self.square else 1)
+            if self.lambda_project_id is not None:
+                self.project_d_numerators[self.lambda_project_id] += coeff * self.user_embedding * n_tasks  # * (2 * ua if self.square else 1)
 
     def get(self):
         cur_lambda = self.numerator / self.denominator / self.avg_time_between_sessions
@@ -77,20 +81,17 @@ class UserLambda:
     def update(self, project_embedding, session, delta_time):
         if session.pid not in self.project_lambdas:
             self.project_lambdas[session.pid] = copy.deepcopy(self.default_lambda)
+            self.project_lambdas[session.pid].set_project_id(session.pid)
         for project_id, project_lambda in self.project_lambdas.items():
             coefficient = 1 if project_id == session.pid else self.other_project_importance
-            project_lambda.update(project_embedding, project_id, session.n_tasks, delta_time, coefficient)
-        self.default_lambda.update(project_embedding, None, session.n_tasks,
+            project_lambda.update(project_embedding, session.pid, session.n_tasks, delta_time, coefficient)
+        self.default_lambda.update(project_embedding, session.pid, session.n_tasks,
                                    delta_time, self.other_project_importance)
 
     def get(self, project_id):
         if project_id not in self.project_lambdas.keys():
             return self.default_lambda.get()
         return self.project_lambdas[project_id].get()
-
-
-def interaction_matrix(users, projects):
-    return np.array([[u.T @ p for p in projects] for u in users])
 
 
 class Model:
