@@ -15,7 +15,7 @@ AVG_TASKS_ON_SESSION = 3.73
 class StepGenerator:
 
     def __init__(self, user_embedding=None, project_embeddings=None, n_projects=3, dim=10, beta=0.001,
-                 other_project_importance=0.8, max_lifetime=100, verbose=False):
+                 other_project_importance=0.8, max_lifetime=100, verbose=False, device='cpu'):
         self.n_projects = n_projects
         self.max_lifetime = max_lifetime
         self.beta = beta
@@ -30,8 +30,11 @@ class StepGenerator:
                                        other_project_importance=self.other_project_importance,
                                        derivative=False,
                                        square=False,
-                                       interactions_supplier=InteractionCalculator(self.user_embedding.unsqueeze(0),
-                                                                                   self.project_embeddings).interactions[0])
+                                       interactions=InteractionCalculator(
+                                           self.user_embedding.unsqueeze(0),
+                                           self.project_embeddings,
+                                           device
+                                       ).interactions[0])
                                        # get_user_supplier(0))
 
     def _select_project_at_current_time(self, projects_ids):

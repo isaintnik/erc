@@ -123,13 +123,13 @@ def init_compare_test(no_cuda=False):
     learning_rate = 0.9
     iter_num = 5
     device = 'cuda' if not no_cuda and torch.cuda.is_available() else 'cpu'
-    users, projects = generate_vectors(users_num, projects_num, dim, std_dev=0.2, device=device)
-    X = [StepGenerator(user_embedding=user.cpu(), project_embeddings=projects.cpu(), beta=beta,
+    users, projects = generate_vectors(users_num, projects_num, dim, std_dev=0.2)
+    X = [StepGenerator(user_embedding=user, project_embeddings=projects, beta=beta,
                        other_project_importance=other_project_importance, max_lifetime=50000, verbose=False)
              .generate_user_steps() for user in users]
     print(len(X[0]))
     print("data generated")
-    m1_init_users, m1_init_projects = generate_vectors(users_num, projects_num, dim, device=device)
+    m1_init_users, m1_init_projects = generate_vectors(users_num, projects_num, dim)
     model1 = Model2Lambda(X, dim, learning_rate=learning_rate, eps=20, beta=beta,
                           other_project_importance=other_project_importance,
                           users_embeddings_prior=m1_init_users,
@@ -143,12 +143,13 @@ def init_compare_test(no_cuda=False):
     start_interaction = interaction_matrix(users, projects)
     init_interaction = interaction_matrix(model1.user_embeddings, model1.project_embeddings)
     for i in range(iter_num):
-        if i % 5 == 0 or i in [1, 2]:
+        # if i % 5 == 0 or i in [1, 2]:
         # if i in [0, 1, 2, 5, 7, 10, 15, 20]:
+        if True:
             end_interaction1 = interaction_matrix(model1.user_embeddings, model1.project_embeddings)
             end_interaction2 = interaction_matrix(model2.user_embeddings, model2.project_embeddings)
-            inter_norm1 = np.linalg.norm(end_interaction1 - start_interaction)
-            inter_norm2 = np.linalg.norm(end_interaction2 - start_interaction)
+            inter_norm1 = torch.norm(end_interaction1 - start_interaction)
+            inter_norm2 = torch.norm(end_interaction2 - start_interaction)
             print("{}-th iter, ll = {}, inter_norm = {}".format(i, model1.log_likelihood(), inter_norm1))
             print("{}-th iter, ll = {}, inter_norm = {}".format(i, model2.log_likelihood(), inter_norm2))
             print("|m1 - m2| = {}, |m1*c - s| = {}".format(np.linalg.norm(end_interaction2 - end_interaction1),
