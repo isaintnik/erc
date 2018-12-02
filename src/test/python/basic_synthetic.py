@@ -117,11 +117,11 @@ def synthetic_test():
 def init_compare_test(no_cuda=False):
     users_num = 10
     projects_num = 10
-    dim = 2
+    dim = 10
     beta = 0.001
     other_project_importance = 0.3
     learning_rate = 0.9
-    iter_num = 36
+    iter_num = 5
     device = 'cuda' if not no_cuda and torch.cuda.is_available() else 'cpu'
     users, projects = generate_vectors(users_num, projects_num, dim, std_dev=0.2, device=device)
     X = [StepGenerator(user_embedding=user.cpu(), project_embeddings=projects.cpu(), beta=beta,

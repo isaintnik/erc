@@ -2,11 +2,23 @@ import copy
 import math
 from collections import namedtuple
 import warnings
+import multiprocessing
+import operator
 import numpy as np
 import torch
 
 
 USession = namedtuple('USession', 'pid start_ts end_ts pr_delta n_tasks')
+
+
+_EXECUTOR = None
+
+
+def _get_executor():
+    global _EXECUTOR
+    if _EXECUTOR is None:
+        _EXECUTOR = multiprocessing.Pool(1)
+    return _EXECUTOR
 
 
 def interaction_matrix(users, projects):
@@ -132,56 +144,69 @@ class Model:
             self.project_embeddings = projects_embeddings_prior
 
     def log_likelihood(self):
-        return self._likelihood_derivative()
+        return self._log_likelihood()
 
     def ll_derivative(self):
-        return self._likelihood_derivative(derivative=True)
+        return self._log_likelihood(derivative=True)
 
-    def _likelihood_derivative(self, derivative=False):
+    def _usr_ll(self, args):
+        derivative, interaction_calculator, user_id = args
         ll = torch.tensor(0., dtype=torch.float64)
         users_derivatives = torch.zeros_like(self.user_embeddings)
         project_derivatives = torch.zeros_like(self.project_embeddings)
-        interaction_calculator = InteractionCalculator(self.user_embeddings, self.project_embeddings)
-        for user_id in range(len(self.users_history)):
-            user_history = self.users_history[user_id]
-            user_lambda = UserLambda(self.user_embeddings[user_id], len(project_derivatives), self.beta,
-                                     self.other_project_importance, interaction_calculator.interactions[user_id],
-                                     # self.other_project_importance, interaction_calculator.get_user_supplier(user_id),
-                                     derivative, self.square, device=self.device)
-            done_projects = set()
-            last_times_sessions = set()
-            for i, user_session in enumerate(user_history):
-                # first time done projects tasks, skip ll update
-                if user_session.pid not in done_projects:
-                    done_projects.add(user_session.pid)
-                    if i > 0:
-                        user_lambda.update(self.project_embeddings[user_session.pid], user_session,
-                                           user_session.start_ts - user_history[i - 1].start_ts)
-                    continue
 
-                if user_session.n_tasks != 0:
-                    if derivative:
-                        self._update_session_derivative(user_session, user_id, user_lambda, users_derivatives,
-                                                        project_derivatives)
-                    else:
-                        ll += self._session_likelihood(user_session, user_lambda)
+        user_history = self.users_history[user_id]
+        user_lambda = UserLambda(self.user_embeddings[user_id], len(project_derivatives), self.beta,
+                                 self.other_project_importance, interaction_calculator.interactions[user_id],
+                                 # self.other_project_importance, interaction_calculator.get_user_supplier(user_id),
+                                 derivative, self.square, device=self.device)
+        done_projects = set()
+        last_times_sessions = set()
+        for i, user_session in enumerate(user_history):
+            # first time done projects tasks, skip ll update
+            if user_session.pid not in done_projects:
+                done_projects.add(user_session.pid)
+                if i > 0:
                     user_lambda.update(self.project_embeddings[user_session.pid], user_session,
                                        user_session.start_ts - user_history[i - 1].start_ts)
-                else:
-                    last_times_sessions.add(user_session)
+                continue
 
-            for user_session in last_times_sessions:
+            if user_session.n_tasks != 0:
                 if derivative:
-                    self._update_last_derivative(user_session, user_id, user_lambda, users_derivatives,
-                                                 project_derivatives)
+                    self._update_session_derivative(user_session, user_id, user_lambda, users_derivatives,
+                                                    project_derivatives)
                 else:
-                    ll += self._last_likelihood(user_session, user_lambda)
-            # if not derivative:
-            #     print({s.pid: user_lambda.project_lambdas[s.pid].get() for s in last_times_sessions})
+                    ll += self._session_likelihood(user_session, user_lambda)
+                user_lambda.update(self.project_embeddings[user_session.pid], user_session,
+                                   user_session.start_ts - user_history[i - 1].start_ts)
+            else:
+                last_times_sessions.add(user_session)
+
+        for user_session in last_times_sessions:
+            if derivative:
+                self._update_last_derivative(user_session, user_id, user_lambda, users_derivatives,
+                                             project_derivatives)
+            else:
+                ll += self._last_likelihood(user_session, user_lambda)
+        return ll, users_derivatives, project_derivatives
+
+    def _log_likelihood(self, derivative=False):
+        interaction_calculator = InteractionCalculator(self.user_embeddings, self.project_embeddings)
+
+        n_users = len(self.users_history)
+        # usr_res = list(map(self._usr_ll, zip([derivative] * n_users, [interaction_calculator] * n_users,
+        usr_res = list(_get_executor().map(self._usr_ll, zip([derivative] * n_users, [interaction_calculator] * n_users,
+                                                        range(n_users))))
+
         if derivative:
+            users_derivatives = sum(map(operator.itemgetter(1), usr_res))
+            project_derivatives = sum(map(operator.itemgetter(2), usr_res))
+
+            print(users_derivatives.shape, project_derivatives.shape)
             if math.isnan(users_derivatives[0][0]) or math.isnan(project_derivatives[0][0]):
                 print(users_derivatives)
             return users_derivatives, project_derivatives
+        ll = sum(map(operator.itemgetter(0), usr_res))
         return ll
 
     def _session_likelihood(self, user_session, user_lambda):
