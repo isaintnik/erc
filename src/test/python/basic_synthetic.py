@@ -1,6 +1,4 @@
 import time
-import argparse
-import torch
 from src.main.python.model import *
 from src.main.python.data_generator import *
 
@@ -15,8 +13,8 @@ def generate_synthetic():
 
 
 def generate_vectors(users_num, projects_num, dim, std_dev=0.2):
-    return torch.randn(users_num, dim) * std_dev + 0.5, \
-           torch.randn(projects_num, dim) * std_dev + 0.5
+    return np.array([np.random.normal(0.5, std_dev, dim) for _ in range(users_num)]), \
+           np.array([np.random.normal(0.5, std_dev, dim) for _ in range(projects_num)])
 
 
 def vecs_dist(vecs1, vecs2):
@@ -24,6 +22,10 @@ def vecs_dist(vecs1, vecs2):
     for i in range(len(vecs1)):
         sum += abs(vecs1[i] - vecs2[i])
     return sum
+
+
+def interaction_matrix(users, projects):
+    return users @ projects.T
 
 
 def correct_likelihood_test():
@@ -114,13 +116,13 @@ def synthetic_test():
     print(np.linalg.norm(start_interaction - end_interaction))
 
 
-def init_compare_test(no_cuda=False):
-    users_num = 10
-    projects_num = 10
+def init_compare_test():
+    users_num = 5
+    projects_num = 3
     dim = 2
     beta = 0.001
     other_project_importance = 0.3
-    learning_rate = 0.9
+    learning_rate = 0.1
     iter_num = 36
     users, projects = generate_vectors(users_num, projects_num, dim, std_dev=0.2)
     X = [StepGenerator(user_embedding=user, project_embeddings=projects, beta=beta,
@@ -128,23 +130,20 @@ def init_compare_test(no_cuda=False):
              .generate_user_steps() for user in users]
     print(len(X[0]))
     print("data generated")
-    device = 'cuda' if not no_cuda and torch.cuda.is_available() else 'cpu'
-    m1_init_users, m1_init_projects = generate_vectors(users_num, projects_num, dim)
     model1 = Model2Lambda(X, dim, learning_rate=learning_rate, eps=20, beta=beta,
                           other_project_importance=other_project_importance,
-                          users_embeddings_prior=m1_init_users,
-                          projects_embeddings_prior=m1_init_projects,
-                          device=device)
+                          users_embeddings_prior=np.array([np.random.normal(0.5, 0.2, dim)
+                                                           for _ in range(users_num)]),
+                          projects_embeddings_prior=np.array([np.random.normal(0.5, 0.2, dim)
+                                                             for _ in range(projects_num)]))
     model2 = Model2Lambda(X, dim, learning_rate=learning_rate, eps=20, beta=beta,
                           other_project_importance=other_project_importance,
                           users_embeddings_prior=users,
-                          projects_embeddings_prior=projects,
-                          device=device)
+                          projects_embeddings_prior=projects)
     start_interaction = interaction_matrix(users, projects)
     init_interaction = interaction_matrix(model1.user_embeddings, model1.project_embeddings)
     for i in range(iter_num):
         if i % 5 == 0 or i in [1, 2]:
-        # if i in [0, 1, 2, 5, 7, 10, 15, 20]:
             end_interaction1 = interaction_matrix(model1.user_embeddings, model1.project_embeddings)
             end_interaction2 = interaction_matrix(model2.user_embeddings, model2.project_embeddings)
             inter_norm1 = np.linalg.norm(end_interaction1 - start_interaction)
@@ -152,33 +151,28 @@ def init_compare_test(no_cuda=False):
             print("{}-th iter, ll = {}, inter_norm = {}".format(i, model1.log_likelihood(), inter_norm1))
             print("{}-th iter, ll = {}, inter_norm = {}".format(i, model2.log_likelihood(), inter_norm2))
             print("|m1 - m2| = {}, |m1*c - s| = {}".format(np.linalg.norm(end_interaction2 - end_interaction1),
-                  torch.norm(torch.mean(start_interaction / end_interaction1) * end_interaction1 - start_interaction)))
+                  np.linalg.norm(np.mean(start_interaction / end_interaction1) * end_interaction1 - start_interaction)))
             print()
         model1.optimization_step()
         model2.optimization_step()
     end_interaction1 = interaction_matrix(model1.user_embeddings, model1.project_embeddings)
     end_interaction2 = interaction_matrix(model2.user_embeddings, model2.project_embeddings)
-    print("|start - init| =", torch.norm(start_interaction - init_interaction))
-    print("|start - end1| =", torch.norm(start_interaction - end_interaction1))
-    print("|start - end2| =", torch.norm(start_interaction - end_interaction2))
-    print("coeff =", torch.mean(end_interaction1 / start_interaction))
+    print("|start - init| =", np.linalg.norm(start_interaction - init_interaction))
+    print("|start - end1| =", np.linalg.norm(start_interaction - end_interaction1))
+    print("|start - end2| =", np.linalg.norm(start_interaction - end_interaction2))
+    print("coeff =", np.mean(end_interaction1 / start_interaction))
     print(start_interaction)
     print(end_interaction1)
     print(end_interaction2)
     print()
-    print(torch.norm(torch.mean(start_interaction / end_interaction1) * end_interaction1 - start_interaction))
+    print(np.linalg.norm(np.mean(start_interaction / end_interaction1) * end_interaction1 - start_interaction))
 
 
 if __name__ == "__main__":
-    arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument('--no_cuda', action='store_true')
-    args = arg_parser.parse_args()
-
     np.random.seed(3)
-    torch.manual_seed(3)
     start_time = time.time()
     # correct_derivative_test()
     # convergence_test()
     # synthetic_test()
-    init_compare_test(args.no_cuda)
+    init_compare_test()
     print("time:", time.time() - start_time)

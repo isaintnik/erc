@@ -1,5 +1,4 @@
 import numpy as np
-import torch
 from src.main.python.model import UserLambda, USession, InteractionCalculator
 
 USER_IDX = 0
@@ -21,17 +20,17 @@ class StepGenerator:
         self.beta = beta
         self.verbose = verbose
         self.other_project_importance = other_project_importance
-        self.user_embedding = user_embedding if user_embedding is not None else torch.randn(dim)
-        self.project_embeddings = project_embeddings if project_embeddings is not None else torch.randn(n_projects, dim)
+        self.user_embedding = user_embedding if user_embedding is not None else np.random.randn(dim)
+        self.project_embeddings = project_embeddings if project_embeddings is not None else np.random.randn(n_projects,
+                                                                                                            dim)
         self.user_lambdas = UserLambda(user_embedding=self.user_embedding,
                                        n_projects=len(self.project_embeddings),
                                        beta=self.beta,
                                        other_project_importance=self.other_project_importance,
                                        derivative=False,
                                        square=False,
-                                       interactions_supplier=InteractionCalculator(self.user_embedding.unsqueeze(0),
-                                                                                   self.project_embeddings).
-                                       get_user_supplier(0))
+                                       interactions_supplier=InteractionCalculator(
+                                           [self.user_embedding], self.project_embeddings).get_user_supplier(0))
 
     def _select_project_at_current_time(self, projects_ids):
         time_deltas = {pid: np.random.exponential(scale=1 / self.user_lambdas.get(pid) ** 2) for pid in projects_ids}
