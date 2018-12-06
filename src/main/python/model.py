@@ -1,4 +1,3 @@
-import copy
 import math
 from collections import namedtuple
 import warnings
@@ -34,6 +33,10 @@ class Model:
                 [np.random.normal(0, 0.2, self.emb_dim) for _ in range(len(projects_set))])
         else:
             self.project_embeddings = projects_embeddings_prior
+
+        self.project_indices = list(map(projects_index, self.users_history))
+        self.reversed_project_indices = list(map(reverse_projects_indices, self.project_indices))
+        self.history_for_lambda = list(map(convert_history, self.users_history))
 
     def log_likelihood(self):
         return self._likelihood_derivative()

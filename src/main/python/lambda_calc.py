@@ -1,5 +1,6 @@
 import copy
 import numpy as np
+import wheel
 
 
 class InteractionCalculator:
@@ -89,3 +90,35 @@ class UserLambda:
         if project_id not in self.project_lambdas.keys():
             return self.default_lambda.get()
         return self.project_lambdas[project_id].get()
+
+
+def projects_index(history):
+    used_projects = []
+    used_projects_set = set()
+    for session in history:
+        if session.pid not in used_projects_set:
+            used_projects.append(session.pid)
+            used_projects_set.add(session.pid)
+    return np.array(used_projects)
+
+
+def reverse_projects_indices(indices):
+    return {general_ind: local_ind for local_ind, general_ind in enumerate(indices)}
+
+
+def convert_history(history, reversed_project_index):
+    project_ids = []
+    time_deltas = []
+    n_tasks = []
+    for session in history:
+        project_ids.append(reversed_project_index[session.pid])
+        time_deltas.append(session.pr_delta)
+        n_tasks.append(session.n_tasks)
+    project_ids = np.array(project_ids)
+    time_deltas = np.array(time_deltas)
+    n_tasks = np.array(n_tasks)
+    return project_ids, time_deltas, n_tasks
+
+
+def calc_lambdas():
+    pass
