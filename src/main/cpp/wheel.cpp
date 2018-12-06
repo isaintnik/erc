@@ -9,7 +9,7 @@ namespace py = pybind11;
 const double AVG_TIME_BETWEEN_SESSIONS = 5;
 
 
-void calc_lambdas(int project_id, py::array_t<double> user_embedding, py::array_t<double> project_embeddings, int dim,
+void calc_lambdas(int project_id, py::array_t<double> user_embedding, py::array_t<double> projects_embeddings, int dim,
         double beta, py::array_t<double> interactions, bool derivative, double foreign_coefficient,
         py::array_t<int> project_ids, py::array_t<int> n_tasks, py::array_t<double> time_deltas,
         py::array_t<double> out_lambdas, py::array_t<double> out_user_derivatives,

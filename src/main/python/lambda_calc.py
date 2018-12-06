@@ -1,18 +1,18 @@
 import copy
 import numpy as np
-import wheel
+from src.main.python import wheel
 
 
 class InteractionCalculator:
     def __init__(self, user_embeddings, project_embeddings):
         self.user_embeddings = user_embeddings
         self.project_embeddings = project_embeddings
-        self.interactions = {}
+        self.interactions = user_embeddings @ project_embeddings.T
 
-    def add(self, user_id, project_id):
-        if (user_id, project_id) not in self.interactions:
-            self.interactions[user_id, project_id] = self.user_embeddings[user_id] @ \
-                                                     self.project_embeddings[project_id].T
+    # def add(self, user_id, project_id):
+    #     if (user_id, project_id) not in self.interactions:
+    #         self.interactions[user_id, project_id] = self.user_embeddings[user_id] @ \
+    #                                                  self.project_embeddings[project_id].T
 
     def get_interaction(self, user_id, project_id):
         return self.interactions[user_id, project_id]
@@ -120,5 +120,19 @@ def convert_history(history, reversed_project_index):
     return project_ids, time_deltas, n_tasks
 
 
-def calc_lambdas():
-    pass
+def calc_lambdas(user_id, project_id, history, user_embedding, dim, beta, interactions, projects_embeddings):
+    upl = UserProjectLambda(user_embedding, dim, beta, interactions.get_user_supplier(user_id))
+    ans = []
+    for session in history:
+        upl.update(projects_embeddings[session.pid], session.pid, session.n_tasks, None,
+                   1 if project_id == session.pid else 0.3)
+        ans.append(upl.get())
+    return np.array(ans)
+
+
+def calc_lambdas_native(user_id, project_id, project_ids, n_tasks, time_deltas, user_embedding, dim, beta,
+                        interactions, projects_embeddings):
+    out_lambdas = np.zeros(len(project_ids), dtype=np.float64)
+    wheel.calc_lambdas(project_id, user_embedding, projects_embeddings, dim, beta, interactions, False, 0.3,
+                       project_ids, n_tasks, time_deltas, out_lambdas, None, None)
+    return out_lambdas

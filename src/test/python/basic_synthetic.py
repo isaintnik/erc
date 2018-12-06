@@ -17,6 +17,13 @@ def generate_vectors(users_num, projects_num, dim, std_dev=0.2):
            np.array([np.random.normal(0.5, std_dev, dim) for _ in range(projects_num)])
 
 
+def generate_history(*, users, projects, beta, other_project_importance, max_lifetime=50000):
+    return [StepGenerator(
+        user_embedding=user, project_embeddings=projects, beta=beta,
+        other_project_importance=other_project_importance, max_lifetime=max_lifetime, verbose=False
+    ).generate_user_steps() for user in users]
+
+
 def vecs_dist(vecs1, vecs2):
     sum = 0
     for i in range(len(vecs1)):
@@ -125,9 +132,7 @@ def init_compare_test():
     learning_rate = 0.1
     iter_num = 36
     users, projects = generate_vectors(users_num, projects_num, dim, std_dev=0.2)
-    X = [StepGenerator(user_embedding=user, project_embeddings=projects, beta=beta,
-                       other_project_importance=other_project_importance, max_lifetime=50000, verbose=False)
-             .generate_user_steps() for user in users]
+    X = generate_history(users=users, projects=projects, beta=beta, other_project_importance=other_project_importance)
     print(len(X[0]))
     print("data generated")
     model1 = Model2Lambda(X, dim, learning_rate=learning_rate, eps=20, beta=beta,

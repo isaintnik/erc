@@ -9,24 +9,24 @@ USession = namedtuple('USession', 'pid start_ts end_ts pr_delta n_tasks')
 
 
 class Model:
-    def __init__(self, users_history, dim, learning_rate=0.003, beta=0.001, eps=3600, other_project_importance=0.3,
+    def __init__(self, users_histories, dim, learning_rate=0.003, beta=0.001, eps=3600, other_project_importance=0.3,
                  users_embeddings_prior=None, projects_embeddings_prior=None, square=False):
-        self.users_history = users_history
+        self.users_histories = users_histories
         self.emb_dim = dim
         self.learning_rate = learning_rate
         self.decay_rate = 0.97
         self.beta = beta
         self.eps = eps
         self.square = square
-        self.data_size = sum([len(user) for user in users_history])
+        self.data_size = sum([len(user) for user in users_histories])
         self.other_project_importance = other_project_importance
 
         self.user_embeddings = np.array(
-            [np.random.normal(0, 0.2, self.emb_dim) for _ in range(len(self.users_history))]) \
+            [np.random.normal(0, 0.2, self.emb_dim) for _ in range(len(self.users_histories))]) \
             if users_embeddings_prior is None else users_embeddings_prior
         if projects_embeddings_prior is None:
             projects_set = set()
-            for user_history in self.users_history:
+            for user_history in self.users_histories:
                 for session in user_history:
                     projects_set.add(session.pid)
             self.project_embeddings = np.array(
@@ -34,9 +34,11 @@ class Model:
         else:
             self.project_embeddings = projects_embeddings_prior
 
-        self.project_indices = list(map(projects_index, self.users_history))
+        self.project_indices = list(map(projects_index, self.users_histories))
         self.reversed_project_indices = list(map(reverse_projects_indices, self.project_indices))
-        self.history_for_lambda = list(map(convert_history, self.users_history))
+        self.history_for_lambda = [convert_history(history, reversed_projects_index)
+                                   for history, reversed_projects_index
+                                   in zip(self.users_histories, self.reversed_project_indices)]
 
     def log_likelihood(self):
         return self._likelihood_derivative()
@@ -49,8 +51,8 @@ class Model:
         users_derivatives = np.zeros_like(self.user_embeddings)
         project_derivatives = np.zeros_like(self.project_embeddings)
         interaction_calculator = InteractionCalculator(self.user_embeddings, self.project_embeddings)
-        for user_id in range(len(self.users_history)):
-            user_history = self.users_history[user_id]
+        for user_id in range(len(self.users_histories)):
+            user_history = self.users_histories[user_id]
             user_lambda = UserLambda(self.user_embeddings[user_id], len(project_derivatives), self.beta,
                                      self.other_project_importance, interaction_calculator.get_user_supplier(user_id),
                                      derivative, self.square)
@@ -112,9 +114,9 @@ class Model:
 
 
 class Model2UA(Model):
-    def __init__(self, users_history, dim, learning_rate=0.01, beta=0.01, eps=3600, other_project_importance=0.5,
+    def __init__(self, users_histories, dim, learning_rate=0.01, beta=0.01, eps=3600, other_project_importance=0.5,
                  users_embeddings_prior=None, projects_embeddings_prior=None):
-        Model.__init__(self, users_history, dim, learning_rate, beta, eps, other_project_importance,
+        Model.__init__(self, users_histories, dim, learning_rate, beta, eps, other_project_importance,
                        users_embeddings_prior, projects_embeddings_prior, square = True)
 
     def _session_likelihood(self, user_session, user_lambda):
@@ -141,9 +143,9 @@ class Model2UA(Model):
 
 
 class Model2Lambda(Model):
-    def __init__(self, users_history, dim, learning_rate=0.01, beta=0.01, eps=3600, other_project_importance=0.5,
+    def __init__(self, users_histories, dim, learning_rate=0.01, beta=0.01, eps=3600, other_project_importance=0.5,
                  users_embeddings_prior=None, projects_embeddings_prior=None):
-        Model.__init__(self, users_history, dim, learning_rate, beta, eps, other_project_importance,
+        Model.__init__(self, users_histories, dim, learning_rate, beta, eps, other_project_importance,
                        users_embeddings_prior, projects_embeddings_prior, square = False)
 
     def _session_likelihood(self, user_session, user_lambda):
@@ -196,9 +198,9 @@ class Model2Lambda(Model):
 
 
 class ModelExpLambda(Model):
-    def __init__(self, users_history, dim, learning_rate=0.01, beta=0.01, eps=3600, other_project_importance=0.5,
+    def __init__(self, users_histories, dim, learning_rate=0.01, beta=0.01, eps=3600, other_project_importance=0.5,
                  users_embeddings_prior=None, projects_embeddings_prior=None):
-        Model.__init__(self, users_history, dim, learning_rate, beta, eps, other_project_importance,
+        Model.__init__(self, users_histories, dim, learning_rate, beta, eps, other_project_importance,
                        users_embeddings_prior, projects_embeddings_prior, square = False)
         self.square = False
 
