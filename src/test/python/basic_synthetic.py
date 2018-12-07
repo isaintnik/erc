@@ -110,18 +110,19 @@ def synthetic_test():
 
 
 def init_compare_test():
-    users_num = 5
-    projects_num = 5
+    users_num = 1
+    projects_num = 1
     dim = 2
     beta = 0.001
     other_project_importance = 0.3
-    learning_rate = 0.3
-    iter_num = 56
+    learning_rate = 0.4
+    iter_num = 50
     users, projects = generate_vectors(users_num, projects_num, dim, mean=0.5, std_dev=0.2)
     users_init, projects_init = generate_vectors(users_num, projects_num, dim, mean=0.3, std_dev=0.2)
     X = generate_history(users=users, projects=projects, beta=beta, other_project_importance=other_project_importance,
-                         max_lifetime=50000)
+                         max_lifetime=100000)
     print(len(X[0]))
+    print(X)
     print("data generated")
     model1 = Model2Lambda(X, dim, learning_rate=learning_rate, eps=20, beta=beta,
                           other_project_importance=other_project_importance,
@@ -144,8 +145,10 @@ def init_compare_test():
             print("|m1 - m2| = {}, |m1*c - s| = {}".format(np.linalg.norm(end_interaction2 - end_interaction1),
                   np.linalg.norm(np.mean(start_interaction / end_interaction1) * end_interaction1 - start_interaction)))
             print()
-        model1.optimization_step()
-        model2.optimization_step()
+        # model1.optimization_step()
+        # model2.optimization_step()
+        model1.glove_like_optimisation()
+        model2.glove_like_optimisation()
     end_interaction1 = interaction_matrix(model1.user_embeddings, model1.project_embeddings)
     end_interaction2 = interaction_matrix(model2.user_embeddings, model2.project_embeddings)
     print("|start - init| =", np.linalg.norm(start_interaction - init_interaction))

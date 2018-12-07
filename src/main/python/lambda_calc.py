@@ -3,23 +3,28 @@ import numpy as np
 # from src.main.python import wheel
 
 
+# matrix multiplication or dict with pairs
 class InteractionCalculator:
-    def __init__(self, user_embeddings, project_embeddings):
+    def __init__(self, user_embeddings, project_embeddings, calc_type="matrix"):
         self.user_embeddings = user_embeddings
         self.project_embeddings = project_embeddings
-        # self.interactions = user_embeddings @ project_embeddings.T
-        self.interactions = {}
+        self.calc_type = calc_type  # matrix, lazy_dict, recalc (not cached)
+        if self.calc_type == "matrix":
+            self.interactions = user_embeddings @ project_embeddings.T
+        else:
+            self.interactions = {}
 
     def get_interaction(self, user_id, project_id):
-        return self.interactions[user_id, project_id]
-
-    def get_user_supplier(self, user_id):
-        def get_user_project_interaction(project_id):
+        if self.calc_type == "recalc":
+            return self.user_embeddings[user_id] @ self.project_embeddings[project_id].T
+        elif self.calc_type == "lazy_dict":
             if (user_id, project_id) not in self.interactions:
                 self.interactions[user_id, project_id] = self.user_embeddings[user_id] @ \
                                                      self.project_embeddings[project_id].T
-            return self.interactions[user_id, project_id]
-        return get_user_project_interaction
+        return self.interactions[user_id, project_id]
+
+    def get_user_supplier(self, user_id):
+        return lambda project_id: self.get_interaction(user_id, project_id)
 
 
 class UserProjectLambda:
@@ -57,8 +62,6 @@ class UserProjectLambda:
         cur_lambda = self.numerator / self.denominator / self.avg_time_between_sessions
         if self.derivative:
             user_derivative = self.user_d_numerator / self.denominator / self.avg_time_between_sessions
-            # solve problem of few projects
-            # maybe we should separate all counting fields of UserProjectLambda (nominator, denominator, derivatives)
             project_derivative = self.project_d_numerators  # / self.denominator / self.avg_time_between_sessions
             return cur_lambda, user_derivative, project_derivative, self.denominator
         return cur_lambda
@@ -72,11 +75,17 @@ class UserLambda:
         self.default_lambda = UserProjectLambda(user_embedding, beta, interactions_supplier,
                                                 derivative=derivative, square=square)
 
+    def copy_default_lambda(self, project_id):
+        new_lam = copy.copy(self.default_lambda)
+        new_lam.user_d_numerator = copy.deepcopy(self.default_lambda.user_d_numerator)
+        new_lam.project_d_numerators = {}
+        new_lam.this_project_id = project_id
+        return new_lam
+
     def update(self, project_embedding, session, delta_time):
+        # print("user embedding in UserLambda", self.default_lambda.user_embedding)
         if session.pid not in self.project_lambdas:
-            # make other copy, not deep for non copy interactions_supplier
-            self.project_lambdas[session.pid] = copy.deepcopy(self.default_lambda)
-            self.project_lambdas[session.pid].set_project_id(session.pid)
+            self.project_lambdas[session.pid] = self.copy_default_lambda(session.pid)
         for project_id, project_lambda in self.project_lambdas.items():
             coefficient = 1 if project_id == session.pid else self.other_project_importance
             project_lambda.update(project_embedding, session.pid, session.n_tasks, delta_time, coefficient)
