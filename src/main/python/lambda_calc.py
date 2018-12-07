@@ -1,36 +1,36 @@
 import copy
 import numpy as np
-from src.main.python import wheel
+# from src.main.python import wheel
 
 
 class InteractionCalculator:
     def __init__(self, user_embeddings, project_embeddings):
         self.user_embeddings = user_embeddings
         self.project_embeddings = project_embeddings
-        self.interactions = user_embeddings @ project_embeddings.T
-
-    # def add(self, user_id, project_id):
-    #     if (user_id, project_id) not in self.interactions:
-    #         self.interactions[user_id, project_id] = self.user_embeddings[user_id] @ \
-    #                                                  self.project_embeddings[project_id].T
+        # self.interactions = user_embeddings @ project_embeddings.T
+        self.interactions = {}
 
     def get_interaction(self, user_id, project_id):
         return self.interactions[user_id, project_id]
 
     def get_user_supplier(self, user_id):
-        return lambda project_id: self.interactions[user_id, project_id]
+        def get_user_project_interaction(project_id):
+            if (user_id, project_id) not in self.interactions:
+                self.interactions[user_id, project_id] = self.user_embeddings[user_id] @ \
+                                                     self.project_embeddings[project_id].T
+            return self.interactions[user_id, project_id]
+        return get_user_project_interaction
 
 
 class UserProjectLambda:
-    def __init__(self, user_embedding, dim, beta, interactions_supplier, *, derivative=False, square=False):
+    def __init__(self, user_embedding, beta, interactions_supplier, *, derivative=False, square=False):
         self.numerator = 10
         self.denominator = 10
         self.beta = beta
-        self.dim = dim
         # self.square = square
         self.derivative = derivative
         self.user_embedding = user_embedding
-        self.user_d_numerator = np.zeros(dim)
+        self.user_d_numerator = np.zeros_like(user_embedding)
         self.project_d_numerators = {}
         self.avg_time_between_sessions = 5
         self.interactions_supplier = interactions_supplier
@@ -50,8 +50,8 @@ class UserProjectLambda:
                 for project_id in self.project_d_numerators:
                     self.project_d_numerators[project_id] *= e
                 if session_project_id not in self.project_d_numerators:
-                    self.project_d_numerators[session_project_id] = np.zeros(self.dim)
-                self.project_d_numerators[self.this_project_id] += coeff * self.user_embedding * n_tasks  # * (2 * ua if self.square else 1)
+                    self.project_d_numerators[session_project_id] = np.zeros_like(self.user_embedding)
+                self.project_d_numerators[self.this_project_id] += coeff * self.user_embedding * n_tasks / self.avg_time_between_sessions  # * (2 * ua if self.square else 1)
 
     def get(self):
         cur_lambda = self.numerator / self.denominator / self.avg_time_between_sessions
@@ -59,20 +59,17 @@ class UserProjectLambda:
             user_derivative = self.user_d_numerator / self.denominator / self.avg_time_between_sessions
             # solve problem of few projects
             # maybe we should separate all counting fields of UserProjectLambda (nominator, denominator, derivatives)
-            project_derivative = self.project_d_numerators / self.denominator / self.avg_time_between_sessions
-            return cur_lambda, user_derivative, project_derivative
+            project_derivative = self.project_d_numerators  # / self.denominator / self.avg_time_between_sessions
+            return cur_lambda, user_derivative, project_derivative, self.denominator
         return cur_lambda
 
 
 class UserLambda:
-    def __init__(self, user_embedding, n_projects, beta, other_project_importance, interactions_supplier,
+    def __init__(self, user_embedding, beta, other_project_importance, interactions_supplier,
                  derivative=False, square=False):
         self.project_lambdas = {}
-        self.beta = beta
-        self.derivative = derivative
         self.other_project_importance = other_project_importance
-        self.user_embedding = user_embedding
-        self.default_lambda = UserProjectLambda(self.user_embedding, n_projects, self.beta, interactions_supplier,
+        self.default_lambda = UserProjectLambda(user_embedding, beta, interactions_supplier,
                                                 derivative=derivative, square=square)
 
     def update(self, project_embedding, session, delta_time):
@@ -120,8 +117,8 @@ def convert_history(history, reversed_project_index):
     return project_ids, time_deltas, n_tasks
 
 
-def calc_lambdas(user_id, project_id, history, user_embedding, dim, beta, interactions, projects_embeddings):
-    upl = UserProjectLambda(user_embedding, dim, beta, interactions.get_user_supplier(user_id))
+def calc_lambdas(user_id, project_id, history, user_embedding, beta, interactions, projects_embeddings):
+    upl = UserProjectLambda(user_embedding, beta, interactions.get_user_supplier(user_id))
     ans = []
     for session in history:
         upl.update(projects_embeddings[session.pid], session.pid, session.n_tasks, None,
@@ -133,6 +130,6 @@ def calc_lambdas(user_id, project_id, history, user_embedding, dim, beta, intera
 def calc_lambdas_native(user_id, project_id, project_ids, n_tasks, time_deltas, user_embedding, dim, beta,
                         interactions, projects_embeddings):
     out_lambdas = np.zeros(len(project_ids), dtype=np.float64)
-    wheel.calc_lambdas(project_id, user_embedding, projects_embeddings, dim, beta, interactions, False, 0.3,
-                       project_ids, n_tasks, time_deltas, out_lambdas, None, None)
+    # wheel.calc_lambdas(project_id, user_embedding, projects_embeddings, dim, beta, interactions, False, 0.3,
+    #                    project_ids, n_tasks, time_deltas, out_lambdas, None, None)
     return out_lambdas

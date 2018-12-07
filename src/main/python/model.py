@@ -1,7 +1,6 @@
 import math
 from collections import namedtuple
 import warnings
-import numpy as np
 from src.main.python.lambda_calc import *
 
 
@@ -34,11 +33,11 @@ class Model:
         else:
             self.project_embeddings = projects_embeddings_prior
 
-        self.project_indices = list(map(projects_index, self.users_histories))
-        self.reversed_project_indices = list(map(reverse_projects_indices, self.project_indices))
-        self.history_for_lambda = [convert_history(history, reversed_projects_index)
-                                   for history, reversed_projects_index
-                                   in zip(self.users_histories, self.reversed_project_indices)]
+        # self.project_indices = list(map(projects_index, self.users_histories))
+        # self.reversed_project_indices = list(map(reverse_projects_indices, self.project_indices))
+        # self.history_for_lambda = [convert_history(history, reversed_projects_index)
+        #                            for history, reversed_projects_index
+        #                            in zip(self.users_histories, self.reversed_project_indices)]
 
     def log_likelihood(self):
         return self._likelihood_derivative()
@@ -53,9 +52,8 @@ class Model:
         interaction_calculator = InteractionCalculator(self.user_embeddings, self.project_embeddings)
         for user_id in range(len(self.users_histories)):
             user_history = self.users_histories[user_id]
-            user_lambda = UserLambda(self.user_embeddings[user_id], len(project_derivatives), self.beta,
-                                     self.other_project_importance, interaction_calculator.get_user_supplier(user_id),
-                                     derivative, self.square)
+            user_lambda = UserLambda(self.user_embeddings[user_id], self.beta, self.other_project_importance,
+                                     interaction_calculator.get_user_supplier(user_id), derivative, self.square)
             done_projects = set()
             last_times_sessions = set()
             for i, user_session in enumerate(user_history):
@@ -170,7 +168,7 @@ class Model2Lambda(Model):
         return -(user_lambda.get(user_session.pid) ** 2) * user_session.pr_delta
 
     def _update_session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
-        lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid)
+        lam, lam_user_d, lam_projects_d, denominator = user_lambda.get(user_session.pid)
         lam2 = lam ** 2
         tau = user_session.pr_delta
         exp_plus = np.exp(-lam2 * (tau + self.eps))
@@ -187,14 +185,19 @@ class Model2Lambda(Model):
         if math.isnan(cur_ll_d):
             cur_ll_d = 0
         users_derivatives[user_id] += cur_ll_d * lam_user_d
-        project_derivatives += cur_ll_d * lam_projects_d
+        # so slow
+        for project_id in lam_projects_d:
+            project_derivatives[project_id] += cur_ll_d * lam_projects_d[project_id] / denominator
         if math.isnan(users_derivatives[0][0]) or math.isnan(project_derivatives[0][0]):
             print(users_derivatives)
 
     def _update_last_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
-        lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid)
-        users_derivatives[user_id] -= 2 * lam * user_session.pr_delta * lam_user_d
-        project_derivatives -= 2 * lam * user_session.pr_delta * lam_projects_d
+        lam, lam_user_d, lam_projects_d, denominator = user_lambda.get(user_session.pid)
+        coeff = 2 * lam * user_session.pr_delta
+        users_derivatives[user_id] -= coeff * lam_user_d
+        # so slow
+        for project_id in lam_projects_d:
+            project_derivatives[project_id] -= coeff * lam_projects_d[project_id] / denominator
 
 
 class ModelExpLambda(Model):

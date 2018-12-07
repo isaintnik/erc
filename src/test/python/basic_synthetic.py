@@ -12,23 +12,9 @@ def generate_synthetic():
     ]
 
 
-def generate_vectors(users_num, projects_num, dim, std_dev=0.2):
-    return np.array([np.random.normal(0.5, std_dev, dim) for _ in range(users_num)]), \
-           np.array([np.random.normal(0.5, std_dev, dim) for _ in range(projects_num)])
-
-
-def generate_history(*, users, projects, beta, other_project_importance, max_lifetime=50000):
-    return [StepGenerator(
-        user_embedding=user, project_embeddings=projects, beta=beta,
-        other_project_importance=other_project_importance, max_lifetime=max_lifetime, verbose=False
-    ).generate_user_steps() for user in users]
-
-
-def vecs_dist(vecs1, vecs2):
-    sum = 0
-    for i in range(len(vecs1)):
-        sum += abs(vecs1[i] - vecs2[i])
-    return sum
+def generate_vectors(users_num, projects_num, dim, mean=0.5, std_dev=0.2):
+    return np.array([np.random.normal(mean, std_dev, dim) for _ in range(users_num)]), \
+           np.array([np.random.normal(mean, std_dev, dim) for _ in range(projects_num)])
 
 
 def interaction_matrix(users, projects):
@@ -125,22 +111,22 @@ def synthetic_test():
 
 def init_compare_test():
     users_num = 5
-    projects_num = 3
+    projects_num = 5
     dim = 2
     beta = 0.001
     other_project_importance = 0.3
-    learning_rate = 0.1
-    iter_num = 36
-    users, projects = generate_vectors(users_num, projects_num, dim, std_dev=0.2)
-    X = generate_history(users=users, projects=projects, beta=beta, other_project_importance=other_project_importance)
+    learning_rate = 0.3
+    iter_num = 56
+    users, projects = generate_vectors(users_num, projects_num, dim, mean=0.5, std_dev=0.2)
+    users_init, projects_init = generate_vectors(users_num, projects_num, dim, mean=0.3, std_dev=0.2)
+    X = generate_history(users=users, projects=projects, beta=beta, other_project_importance=other_project_importance,
+                         max_lifetime=50000)
     print(len(X[0]))
     print("data generated")
     model1 = Model2Lambda(X, dim, learning_rate=learning_rate, eps=20, beta=beta,
                           other_project_importance=other_project_importance,
-                          users_embeddings_prior=np.array([np.random.normal(0.5, 0.2, dim)
-                                                           for _ in range(users_num)]),
-                          projects_embeddings_prior=np.array([np.random.normal(0.5, 0.2, dim)
-                                                             for _ in range(projects_num)]))
+                          users_embeddings_prior=users_init,
+                          projects_embeddings_prior=projects_init)
     model2 = Model2Lambda(X, dim, learning_rate=learning_rate, eps=20, beta=beta,
                           other_project_importance=other_project_importance,
                           users_embeddings_prior=users,
@@ -163,8 +149,8 @@ def init_compare_test():
     end_interaction1 = interaction_matrix(model1.user_embeddings, model1.project_embeddings)
     end_interaction2 = interaction_matrix(model2.user_embeddings, model2.project_embeddings)
     print("|start - init| =", np.linalg.norm(start_interaction - init_interaction))
-    print("|start - end1| =", np.linalg.norm(start_interaction - end_interaction1))
-    print("|start - end2| =", np.linalg.norm(start_interaction - end_interaction2))
+    print("|start - end_init| =", np.linalg.norm(start_interaction - end_interaction1))
+    print("|start - end_true| =", np.linalg.norm(start_interaction - end_interaction2))
     print("coeff =", np.mean(end_interaction1 / start_interaction))
     print(start_interaction)
     print(end_interaction1)

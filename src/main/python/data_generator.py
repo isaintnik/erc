@@ -24,7 +24,6 @@ class StepGenerator:
         self.project_embeddings = project_embeddings if project_embeddings is not None else np.random.randn(n_projects,
                                                                                                             dim)
         self.user_lambdas = UserLambda(user_embedding=self.user_embedding,
-                                       n_projects=len(self.project_embeddings),
                                        beta=self.beta,
                                        other_project_importance=self.other_project_importance,
                                        derivative=False,
@@ -108,3 +107,10 @@ class StepGenerator:
 
         print({pid: self.user_lambdas.get(pid) for pid in projects_ids})
         return generation_summary
+
+
+def generate_history(*, users, projects, beta, other_project_importance, max_lifetime=50000):
+    return [StepGenerator(
+        user_embedding=user, project_embeddings=projects, beta=beta,
+        other_project_importance=other_project_importance, max_lifetime=max_lifetime, verbose=False
+    ).generate_user_steps() for user in users]
