@@ -1,6 +1,9 @@
 import copy
 import numpy as np
-# from src.main.python import wheel
+from src.main.python import wheel
+
+
+DEFAULT_FOREIGN_COEFFICIENT = .3
 
 
 # matrix multiplication or dict with pairs
@@ -128,17 +131,20 @@ def convert_history(history, reversed_project_index):
 
 def calc_lambdas(user_id, project_id, history, user_embedding, beta, interactions, projects_embeddings):
     upl = UserProjectLambda(user_embedding, beta, interactions.get_user_supplier(user_id))
-    ans = []
-    for session in history:
+    ans = np.zeros(len(history), dtype=np.float64)
+    for i, session in enumerate(history):
         upl.update(projects_embeddings[session.pid], session.pid, session.n_tasks, None,
-                   1 if project_id == session.pid else 0.3)
-        ans.append(upl.get())
-    return np.array(ans)
+                   1 if project_id == session.pid else DEFAULT_FOREIGN_COEFFICIENT)
+        ans[i] = upl.get()
+    return ans
 
 
-def calc_lambdas_native(user_id, project_id, project_ids, n_tasks, time_deltas, user_embedding, dim, beta,
-                        interactions, projects_embeddings):
+def calc_lambdas_native(project_id, project_ids, n_tasks, time_deltas, user_embedding, dim, beta, interactions,
+                        projects_embeddings):
     out_lambdas = np.zeros(len(project_ids), dtype=np.float64)
-    # wheel.calc_lambdas(project_id, user_embedding, projects_embeddings, dim, beta, interactions, False, 0.3,
-    #                    project_ids, n_tasks, time_deltas, out_lambdas, None, None)
+    out_user_derivatives = np.zeros((len(project_ids), len(user_embedding)), dtype=np.float64)
+    out_project_derivatives = np.zeros((len(project_ids),) + projects_embeddings.shape, dtype=np.float64)
+    wheel.calc_lambdas(project_id, user_embedding, projects_embeddings, dim, beta, interactions, False,
+                       DEFAULT_FOREIGN_COEFFICIENT, project_ids, n_tasks, time_deltas, out_lambdas,
+                       out_user_derivatives, out_project_derivatives)
     return out_lambdas

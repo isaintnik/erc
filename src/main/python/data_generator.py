@@ -105,7 +105,8 @@ class StepGenerator:
             user_session = USession(pid, self.max_lifetime, self.max_lifetime + 1, self.max_lifetime - last_time_done[pid], 0)
             generation_summary.append(user_session)
 
-        print({pid: self.user_lambdas.get(pid) for pid in projects_ids})
+        if self.verbose:
+            print({pid: self.user_lambdas.get(pid) for pid in projects_ids})
         return generation_summary
 
 
