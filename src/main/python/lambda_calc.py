@@ -35,6 +35,7 @@ class InteractionCalculator:
 class UserLambda:
     def __init__(self, user_embedding, beta, other_project_importance, interactions_supplier,
                  derivative=False, square=False):
+        self.dim = len(user_embedding)
         self.beta = beta
         self.other_project_importance = other_project_importance
         self.derivative = derivative
@@ -44,34 +45,36 @@ class UserLambda:
         self.numerator = 10.
         self.denominator = 10.
         self.user_d_numerator = np.zeros_like(user_embedding)
-        self.numerator_by_project = {}
-        self.denominator_by_project = {}
-        self.user_d_numerators_by_project = {}
-        self.project_d_numerator_by_project = {}
-        self.seen_projects = set()
+        self.num_denom_by_project = np.zeros((1, 2))
+        self.user_d_numerators_by_project = np.zeros((1, self.dim))
+        self.project_d_numerator_by_project = np.zeros((1, self.dim))
+        self.projects_to_ind = {}
 
     def update(self, project_embedding, session, delta_time):
         e = np.exp(-self.beta)  # * delta_time)
         ua = self.interactions_supplier(session.pid)
-        self.seen_projects.add(session.pid)
+        if session.pid not in self.projects_to_ind:
+            self.projects_to_ind[session.pid] = len(self.projects_to_ind)
+            if len(self.projects_to_ind) != 1:
+                self.num_denom_by_project = np.vstack((self.num_denom_by_project, np.zeros((1, 2))))
+                self.user_d_numerators_by_project = np.vstack((self.user_d_numerators_by_project, np.zeros((1, self.dim))))
+                self.project_d_numerator_by_project = np.vstack((self.project_d_numerator_by_project, np.zeros((1, self.dim))))
 
         self.numerator = e * self.numerator + self.other_project_importance * ua * session.n_tasks
         self.denominator = e * self.denominator + self.other_project_importance
         self.user_d_numerator = e * self.user_d_numerator + self.other_project_importance * project_embedding * session.n_tasks
 
-        for project_id in self.seen_projects:
-            self.numerator_by_project[project_id] = e * self.numerator_by_project.get(project_id, 0.)
-            self.denominator_by_project[project_id] = e * self.denominator_by_project.get(project_id, 0.)
-            self.user_d_numerators_by_project[project_id] = e * self.user_d_numerators_by_project.get(project_id, np.zeros_like(self.user_embedding))
-            self.project_d_numerator_by_project[project_id] = e * self.project_d_numerator_by_project.get(project_id, np.zeros_like(self.user_embedding))
+        self.num_denom_by_project *= e
+        self.user_d_numerators_by_project *= e
+        self.project_d_numerator_by_project *= e
 
-        self.numerator_by_project[session.pid] += (1 - self.other_project_importance) * ua * session.n_tasks
-        self.denominator_by_project[session.pid] += (1 - self.other_project_importance)
-        self.user_d_numerators_by_project[session.pid] += (1 - self.other_project_importance) * project_embedding * session.n_tasks
-        self.project_d_numerator_by_project[session.pid] += (1 - self.other_project_importance) * self.user_embedding * session.n_tasks
+        self.num_denom_by_project[self.projects_to_ind[session.pid]][0] += (1 - self.other_project_importance) * ua * session.n_tasks
+        self.num_denom_by_project[self.projects_to_ind[session.pid]][1] += (1 - self.other_project_importance)
+        self.user_d_numerators_by_project[self.projects_to_ind[session.pid]] += (1 - self.other_project_importance) * project_embedding * session.n_tasks
+        self.project_d_numerator_by_project[self.projects_to_ind[session.pid]] += (1 - self.other_project_importance) * self.user_embedding * session.n_tasks
 
     def get(self, project_id):
-        if project_id not in self.numerator_by_project:
+        if project_id not in self.projects_to_ind:
             if self.derivative:
                 return self.numerator / self.denominator / self.avg_time_between_sessions, \
                        np.zeros_like(self.user_embedding) / self.avg_time_between_sessions, {}
@@ -80,22 +83,22 @@ class UserLambda:
         else:
             if self.derivative:
                 project_derivatives = {}
-                denominator = self.denominator + self.denominator_by_project[project_id]
-                for pid in self.seen_projects:
-                    numerator = self.project_d_numerator_by_project[pid].copy()
+                denominator = self.denominator + self.num_denom_by_project[self.projects_to_ind[project_id]][1]
+                for pid in self.projects_to_ind:
+                    numerator = self.project_d_numerator_by_project[self.projects_to_ind[pid]].copy()
                     if pid == project_id:
-                        numerator += self.project_d_numerator_by_project[project_id] / (
+                        numerator += self.project_d_numerator_by_project[self.projects_to_ind[project_id]] / (
                                 1 - self.other_project_importance)
                     project_derivatives[pid] = numerator / denominator / self.avg_time_between_sessions
 
-                return (self.numerator + self.numerator_by_project[project_id]) / (
-                        self.denominator + self.denominator_by_project[project_id]) / self.avg_time_between_sessions, \
-                       (self.user_d_numerator + self.user_d_numerators_by_project[project_id]) / (
-                        self.denominator + self.denominator_by_project[project_id]) / self.avg_time_between_sessions, \
+                return (self.numerator + self.num_denom_by_project[self.projects_to_ind[project_id]][0]) / (
+                        self.denominator + self.num_denom_by_project[self.projects_to_ind[project_id]][1]) / self.avg_time_between_sessions, \
+                       (self.user_d_numerator + self.user_d_numerators_by_project[self.projects_to_ind[project_id]]) / (
+                        self.denominator + self.num_denom_by_project[self.projects_to_ind[project_id]][1]) / self.avg_time_between_sessions, \
                        project_derivatives
             else:
-                return (self.numerator + self.numerator_by_project[project_id]) / (
-                        self.denominator + self.denominator_by_project[project_id]) / self.avg_time_between_sessions
+                return (self.numerator + self.num_denom_by_project[self.projects_to_ind[project_id]][0]) / (
+                        self.denominator + self.num_denom_by_project[self.projects_to_ind[project_id]][1]) / self.avg_time_between_sessions
 
 
 def projects_index(history):

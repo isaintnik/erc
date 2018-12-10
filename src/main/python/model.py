@@ -236,16 +236,18 @@ class Model2Lambda(Model):
         exp_plus = np.exp(-lam2 * (tau + self.eps))
         exp_minus = np.exp(-lam2 * max(0, tau - self.eps))
 
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            cur_ll_d = 2 * lam * ((tau + self.eps) * exp_plus - max(0, tau - self.eps) * exp_minus) / (
-                        -exp_plus + exp_minus)
-            if w and w[0].category == RuntimeWarning:
-                cur_ll_d = 0
-                warnings.warn("in derivative", RuntimeWarning)
-
-        if math.isnan(cur_ll_d):
-            cur_ll_d = 0
+        # with warnings.catch_warnings(record=True) as w:
+        #     warnings.simplefilter("always")
+        #     cur_ll_d = 2 * lam * ((tau + self.eps) * exp_plus - max(0, tau - self.eps) * exp_minus) / (
+        #                 -exp_plus + exp_minus)
+        #     if w and w[0].category == RuntimeWarning:
+        #         cur_ll_d = 0
+        #         warnings.warn("in derivative", RuntimeWarning)
+        #
+        # if math.isnan(cur_ll_d):
+        #     cur_ll_d = 0
+        cur_ll_d = 2 * lam * ((tau + self.eps) * exp_plus - max(0, tau - self.eps) * exp_minus) / (
+                -exp_plus + exp_minus)
         users_derivatives[user_id] += cur_ll_d * lam_user_d
         # so slow
         for project_id in lam_projects_d:
