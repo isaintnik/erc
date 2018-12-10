@@ -1,6 +1,5 @@
 import math
 from collections import namedtuple
-import warnings
 from src.main.python.lambda_calc import *
 
 
@@ -91,14 +90,12 @@ class Model:
         return ll
 
     def glove_like_optimisation(self):
-        # print("in glove_like_optimisation")
         lr = self.learning_rate / self.data_size
         # we should check, that python change embeddings everywhere while optimizing
         users_diffs_squares = np.ones(self.user_embeddings.shape[0]) * self.adagrad_eps
         projects_diffs_squares = np.ones(self.project_embeddings.shape[0]) * self.adagrad_eps
         interaction_calculator = InteractionCalculator(self.user_embeddings, self.project_embeddings, calc_type="recalc")
         for user_id, user_history in enumerate(self.users_histories):
-            # print("user_id", user_id)
             user_lambda = UserLambda(self.user_embeddings[user_id], self.beta, self.other_project_importance,
                                      interaction_calculator.get_user_supplier(user_id), derivative=True, square=self.square)
             done_projects = set()
@@ -113,9 +110,8 @@ class Model:
                     continue
 
                 if user_session.n_tasks != 0:
-                    # print("update session", user_session.start_ts)
                     # update in session
-                    lam, lam_user_d, lam_projects_d, denominator = user_lambda.get(user_session.pid)
+                    lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid)
                     lam2 = lam ** 2
                     tau = user_session.pr_delta
                     exp_plus = np.exp(-lam2 * (tau + self.eps))
@@ -134,9 +130,9 @@ class Model:
                         cur_ll_d = 0
                     user_diff = cur_ll_d * lam_user_d
                     users_diffs_squares[user_id] += user_diff @ user_diff.T
-                    self.user_embeddings[user_id] += cur_ll_d * lam_user_d * lr / users_diffs_squares[user_id]
+                    self.user_embeddings[user_id] += user_diff * lr / users_diffs_squares[user_id]
                     for project_id in lam_projects_d:
-                        project_diff = cur_ll_d * lam_projects_d[project_id] / denominator
+                        project_diff = cur_ll_d * lam_projects_d[project_id]
                         projects_diffs_squares[project_id] += project_diff @ project_diff.T
                         self.project_embeddings[project_id] += project_diff * lr / projects_diffs_squares[project_id]
 
@@ -147,13 +143,12 @@ class Model:
 
             for user_session in last_times_sessions:
                 # update in the end
-                lam, lam_user_d, lam_projects_d, denominator = user_lambda.get(user_session.pid)
-                coeff = 2 * lam * user_session.pr_delta
-                user_diff = coeff * lam_user_d
+                lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid)
+                user_diff = 2 * lam * user_session.pr_delta * lam_user_d
                 users_diffs_squares[user_id] += user_diff @ user_diff.T
                 self.user_embeddings[user_id] -= user_diff * lr / math.sqrt(users_diffs_squares[user_id])
                 for project_id in lam_projects_d:
-                    project_diff = coeff * lam_projects_d[project_id] / denominator
+                    project_diff = 2 * lam * user_session.pr_delta * lam_projects_d[project_id]
                     projects_diffs_squares[project_id] += project_diff @ project_diff.T
                     self.project_embeddings[project_id] -= project_diff * lr / math.sqrt(projects_diffs_squares[project_id])
 
@@ -211,7 +206,7 @@ class Model2Lambda(Model):
     def __init__(self, users_histories, dim, learning_rate=0.01, beta=0.01, eps=3600, other_project_importance=0.5,
                  users_embeddings_prior=None, projects_embeddings_prior=None):
         Model.__init__(self, users_histories, dim, learning_rate, beta, eps, other_project_importance,
-                       users_embeddings_prior, projects_embeddings_prior, square = False)
+                       users_embeddings_prior, projects_embeddings_prior, square=False)
 
     def _session_likelihood(self, user_session, user_lambda):
         cur_lambda2 = user_lambda.get(user_session.pid) ** 2
@@ -225,7 +220,7 @@ class Model2Lambda(Model):
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             ans = np.log(-np.exp(-cur_lambda2 * (user_session.pr_delta + self.eps)) +
-                      np.exp(-cur_lambda2 * max(0, user_session.pr_delta - self.eps)))
+                         np.exp(-cur_lambda2 * max(0, user_session.pr_delta - self.eps)))
             if w and w[0].category == RuntimeWarning:
                 ans = -1e6
                 warnings.warn("in ll", RuntimeWarning)
@@ -235,7 +230,7 @@ class Model2Lambda(Model):
         return -(user_lambda.get(user_session.pid) ** 2) * user_session.pr_delta
 
     def _update_session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
-        lam, lam_user_d, lam_projects_d, denominator = user_lambda.get(user_session.pid)
+        lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid)
         lam2 = lam ** 2
         tau = user_session.pr_delta
         exp_plus = np.exp(-lam2 * (tau + self.eps))
@@ -254,17 +249,17 @@ class Model2Lambda(Model):
         users_derivatives[user_id] += cur_ll_d * lam_user_d
         # so slow
         for project_id in lam_projects_d:
-            project_derivatives[project_id] += cur_ll_d * lam_projects_d[project_id] / denominator
+            project_derivatives[project_id] += cur_ll_d * lam_projects_d[project_id]
         if math.isnan(users_derivatives[0][0]) or math.isnan(project_derivatives[0][0]):
             print(users_derivatives)
 
     def _update_last_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
-        lam, lam_user_d, lam_projects_d, denominator = user_lambda.get(user_session.pid)
+        lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid)
         coeff = 2 * lam * user_session.pr_delta
         users_derivatives[user_id] -= coeff * lam_user_d
         # so slow
         for project_id in lam_projects_d:
-            project_derivatives[project_id] -= coeff * lam_projects_d[project_id] / denominator
+            project_derivatives[project_id] -= coeff * lam_projects_d[project_id]
 
 
 class ModelExpLambda(Model):
