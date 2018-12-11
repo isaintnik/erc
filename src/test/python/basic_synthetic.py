@@ -110,13 +110,13 @@ def synthetic_test():
 
 
 def init_compare_test():
-    users_num = 1
-    projects_num = 1
+    users_num = 5
+    projects_num = 5
     dim = 2
     beta = 0.001
     other_project_importance = 0.3
-    learning_rate = 0.4
-    iter_num = 50
+    learning_rate = 4.4
+    iter_num = 40
     users, projects = generate_vectors(users_num, projects_num, dim, mean=0.5, std_dev=0.2)
     users_init, projects_init = generate_vectors(users_num, projects_num, dim, mean=0.3, std_dev=0.2)
     X = generate_history(users=users, projects=projects, beta=beta, other_project_importance=other_project_importance,
@@ -154,7 +154,8 @@ def init_compare_test():
     print("|start - init| =", np.linalg.norm(start_interaction - init_interaction))
     print("|start - end_init| =", np.linalg.norm(start_interaction - end_interaction1))
     print("|start - end_true| =", np.linalg.norm(start_interaction - end_interaction2))
-    print("coeff =", np.mean(end_interaction1 / start_interaction))
+    print("coeff1 =", np.mean(end_interaction1 / start_interaction))
+    print("coeff2 =", np.mean(end_interaction2 / start_interaction))
     print(start_interaction)
     print(end_interaction1)
     print(end_interaction2)
