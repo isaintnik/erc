@@ -115,14 +115,14 @@ def init_compare_test():
     dim = 2
     beta = 0.001
     other_project_importance = 0.3
-    learning_rate = 4.4
-    iter_num = 40
+    learning_rate = 9.4
+    iter_num = 60
     users, projects = generate_vectors(users_num, projects_num, dim, mean=0.5, std_dev=0.2)
     users_init, projects_init = generate_vectors(users_num, projects_num, dim, mean=0.3, std_dev=0.2)
     X = generate_history(users=users, projects=projects, beta=beta, other_project_importance=other_project_importance,
-                         max_lifetime=100000)
-    print(len(X[0]))
+                         start_from=10000, max_lifetime=100000)
     print(X)
+    print(len(X[0]))
     print("data generated")
     model1 = Model2Lambda(X, dim, learning_rate=learning_rate, eps=20, beta=beta,
                           other_project_importance=other_project_importance,
@@ -134,21 +134,21 @@ def init_compare_test():
                           projects_embeddings_prior=projects)
     start_interaction = interaction_matrix(users, projects)
     init_interaction = interaction_matrix(model1.user_embeddings, model1.project_embeddings)
-    for i in range(iter_num):
-        if i % 5 == 0 or i in [1, 2]:
-            end_interaction1 = interaction_matrix(model1.user_embeddings, model1.project_embeddings)
-            end_interaction2 = interaction_matrix(model2.user_embeddings, model2.project_embeddings)
-            inter_norm1 = np.linalg.norm(end_interaction1 - start_interaction)
-            inter_norm2 = np.linalg.norm(end_interaction2 - start_interaction)
-            print("{}-th iter, ll = {}, inter_norm = {}".format(i, model1.log_likelihood(), inter_norm1))
-            print("{}-th iter, ll = {}, inter_norm = {}".format(i, model2.log_likelihood(), inter_norm2))
-            print("|m1 - m2| = {}, |m1*c - s| = {}".format(np.linalg.norm(end_interaction2 - end_interaction1),
-                  np.linalg.norm(np.mean(start_interaction / end_interaction1) * end_interaction1 - start_interaction)))
-            print()
-        # model1.optimization_step()
-        # model2.optimization_step()
-        model1.glove_like_optimisation()
-        model2.glove_like_optimisation()
+    model1.glove_like_optimisation(iter_num, True)
+    model2.glove_like_optimisation(iter_num, True)
+    # for i in range(iter_num):
+    #     if i % 5 == 0 or i in [1, 2]:
+    #         end_interaction1 = interaction_matrix(model1.user_embeddings, model1.project_embeddings)
+    #         end_interaction2 = interaction_matrix(model2.user_embeddings, model2.project_embeddings)
+    #         inter_norm1 = np.linalg.norm(end_interaction1 - start_interaction)
+    #         inter_norm2 = np.linalg.norm(end_interaction2 - start_interaction)
+    #         print("{}-th iter, ll = {}, inter_norm = {}".format(i, model1.log_likelihood(), inter_norm1))
+    #         print("{}-th iter, ll = {}, inter_norm = {}".format(i, model2.log_likelihood(), inter_norm2))
+    #         print("|m1 - m2| = {}, |m1*c - s| = {}".format(np.linalg.norm(end_interaction2 - end_interaction1),
+    #               np.linalg.norm(np.mean(start_interaction / end_interaction1) * end_interaction1 - start_interaction)))
+    #         print()
+    #     model1.optimization_step()
+    #     model2.optimization_step()
     end_interaction1 = interaction_matrix(model1.user_embeddings, model1.project_embeddings)
     end_interaction2 = interaction_matrix(model2.user_embeddings, model2.project_embeddings)
     print("|start - init| =", np.linalg.norm(start_interaction - init_interaction))

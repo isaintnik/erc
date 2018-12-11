@@ -1,6 +1,4 @@
-import copy
 import numpy as np
-import warnings
 
 # from src.main.python import wheel
 
@@ -76,8 +74,8 @@ class UserLambda:
         self.user_d_numerators_by_project[self.projects_to_ind[session.pid]] += (1 - self.other_project_importance) * project_embedding * session.n_tasks
         self.project_d_numerator_by_project[self.projects_to_ind[session.pid]] += (1 - self.other_project_importance) * self.user_embedding * session.n_tasks
 
-        self.last_user_derivative_numerator = self.user_d_numerators_by_project[self.projects_to_ind[session.pid]] / (1 - self.other_project_importance)
-        self.last_project_derivative_numerator = {session.pid: self.project_d_numerator_by_project[self.projects_to_ind[session.pid]] / (1 - self.other_project_importance)}
+        self.last_user_derivative_numerator = project_embedding * session.n_tasks
+        self.last_project_derivative_numerator = {session.pid: self.user_embedding * session.n_tasks}
 
     def get(self, project_id, accum=True):
         if self.derivative:
