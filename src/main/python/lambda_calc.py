@@ -8,7 +8,7 @@ DEFAULT_FOREIGN_COEFFICIENT = .3
 
 # matrix multiplication or dict with pairs
 class InteractionCalculator:
-    def __init__(self, user_embeddings, project_embeddings, calc_type="matrix"):
+    def __init__(self, user_embeddings, project_embeddings, calc_type="lazy_dict"):
         self.user_embeddings = user_embeddings
         self.project_embeddings = project_embeddings
         self.calc_type = calc_type  # matrix, lazy_dict, recalc (not cached)

@@ -20,16 +20,15 @@ class Model:
         self.data_size = sum([len(user_history) for user_history in users_histories.values()])
         self.other_project_importance = other_project_importance
 
-        self.user_embeddings = np.array(
-            [np.random.normal(0, 0.2, self.emb_dim) for _ in self.users_histories]) \
+        self.user_embeddings = {user_id: np.random.normal(0.3, 0.2, self.emb_dim)
+                                for user_id, _ in self.users_histories.items()} \
             if users_embeddings_prior is None else users_embeddings_prior
         if projects_embeddings_prior is None:
-            projects_set = set()
+            self.project_embeddings = {}
             for user_history in self.users_histories.values():
                 for session in user_history:
-                    projects_set.add(session.pid)
-            self.project_embeddings = np.array(
-                [np.random.normal(0, 0.2, self.emb_dim) for _ in range(len(projects_set))])
+                    if session.pid not in self.project_embeddings:
+                        self.project_embeddings[session.pid] = np.random.normal(0.3, 0.2, self.emb_dim)
         else:
             self.project_embeddings = projects_embeddings_prior
 
@@ -47,8 +46,8 @@ class Model:
 
     def _likelihood_derivative(self, derivative=False):
         ll = 0.
-        users_derivatives = np.zeros_like(self.user_embeddings)
-        project_derivatives = np.zeros_like(self.project_embeddings)
+        users_derivatives = {k: np.zeros_like(v) for k, v in self.user_embeddings.items()}
+        project_derivatives = {k: np.zeros_like(v) for k, v in self.project_embeddings.items()}
         interaction_calculator = InteractionCalculator(self.user_embeddings, self.project_embeddings)
         for user_id, user_history in self.users_histories.items():
             user_lambda = UserLambda(self.user_embeddings[user_id], self.beta, self.other_project_importance,
@@ -94,8 +93,10 @@ class Model:
         self.learning_rate *= self.decay_rate
         discount_decay = 0.999
         # we should check, that python change embeddings everywhere while optimizing
-        users_diffs_squares = np.ones(self.user_embeddings.shape)  # * 1e-5
-        projects_diffs_squares = np.ones(self.project_embeddings.shape)  # * 1e-5
+        users_diffs_squares = {k: np.ones_like(v) for k, v in self.user_embeddings.items()}
+        # users_diffs_squares = np.ones(self.user_embeddings.shape)  # * 1e-5
+        projects_diffs_squares = {k: np.ones_like(v) for k, v in self.project_embeddings.items()}
+        # projects_diffs_squares = np.ones(self.project_embeddings.shape)  # * 1e-5
         interaction_calculator = InteractionCalculator(self.user_embeddings, self.project_embeddings, calc_type="recalc")
         for optimization_iter in range(iter_num):
             for user_id, user_history in self.users_histories.items():
@@ -164,8 +165,11 @@ class Model:
         users_derivatives, project_derivatives = self.ll_derivative()
         if math.isnan(users_derivatives[0][0]):
             print(users_derivatives)
-        self.user_embeddings += users_derivatives * self.learning_rate / self.data_size
-        self.project_embeddings += project_derivatives * self.learning_rate / self.data_size
+        lr = self.learning_rate / self.data_size
+        for user_id in self.user_embeddings:
+            self.user_embeddings[user_id] += users_derivatives[user_id] * lr
+        for user_id in self.project_embeddings:
+            self.project_embeddings[user_id] += project_derivatives[user_id] * lr
         self.learning_rate *= self.decay_rate
 
 
@@ -310,21 +314,36 @@ class ModelApplication:
         self.other_project_importance = other_project_importance
         self.interaction_calculator = InteractionCalculator(self.user_embeddings, self.project_embeddings,
                                                             calc_type="lazy_dict")
-        self.user_lambdas = {user_id: UserLambda(self.user_embeddings[user_id], self.beta,
+        self.user_lambdas = {user_id: UserLambda(user_embedding, self.beta,
                                                  self.other_project_importance,
                                                  self.interaction_calculator.get_user_supplier(user_id),
-                                                 derivative=False) for user_id in range(len(user_embeddings))}
+                                                 derivative=False) for user_id, user_embedding in user_embeddings.items()}
         self.last_user_session = {}
 
     def accept(self, user_id, session):
+        if user_id not in self.user_lambdas or session.pid not in self.project_embeddings:
+            return
         if user_id in self.last_user_session:
             self.user_lambdas[user_id].update(self.project_embeddings[session.pid], session,
                                               session.start_ts - self.last_user_session[user_id].start_ts)
         self.last_user_session[user_id] = session
 
     def get_lambda(self, user_id, project_id):
+        # fix default lambda
+        if user_id not in self.user_lambdas or project_id not in self.project_embeddings:
+            return self.lambda_transform(self.user_lambdas[0].get(-1))
         return self.lambda_transform(self.user_lambdas[user_id].get(project_id))
 
     def time_delta(self, user_id, project_id, size=1):
-        return np.mean(np.random.exponential(scale=1/self.lambda_transform(self.user_lambdas[user_id].get(project_id)),
-                                             size=size))
+        # fix default lambda
+        if user_id not in self.user_lambdas:
+            lam = self.lambda_transform(self.user_lambdas[0].get(-1))
+        else:
+            lam = self.lambda_transform(self.user_lambdas[user_id].get(project_id))
+        return np.mean(np.random.exponential(scale=1 / lam, size=size))
+
+    def fit(self, users_history):
+        for user_id, user_history in users_history.items():
+            for i, session in enumerate(user_history):
+                self.accept(user_id, session)
+        return self

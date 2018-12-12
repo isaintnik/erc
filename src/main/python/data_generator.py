@@ -15,7 +15,7 @@ class StepGenerator:
 
     def __init__(self, user_embedding=None, project_embeddings=None, beta=0.001,
                  other_project_importance=0.8, start_from=0, max_lifetime=50000, verbose=False):
-        self.model = ModelApplication([user_embedding], project_embeddings, beta, other_project_importance)
+        self.model = ModelApplication({0: user_embedding}, project_embeddings, beta, other_project_importance)
         self.n_projects = len(project_embeddings)
         self.start_from = start_from
         self.max_lifetime = max_lifetime
@@ -112,7 +112,7 @@ class StepGenerator:
 
 
 def generate_history(*, users, projects, beta, other_project_importance, start_from=0, max_lifetime=50000):
-    return [StepGenerator(
-        user_embedding=user, project_embeddings=projects, beta=beta,
+    return {user_id: StepGenerator(
+        user_embedding=user_embedding, project_embeddings=projects, beta=beta,
         other_project_importance=other_project_importance, start_from=start_from, max_lifetime=max_lifetime,
-        verbose=False).generate_user_steps() for user in users]
+        verbose=False).generate_user_steps() for user_id, user_embedding in users.items()}
