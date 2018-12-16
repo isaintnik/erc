@@ -1,39 +1,24 @@
 import numpy as np
 
-# from src.main.python import wheel
-
 
 DEFAULT_FOREIGN_COEFFICIENT = .3
 
 
-# matrix multiplication or dict with pairs
 class InteractionCalculator:
-    def __init__(self, user_embeddings, project_embeddings, calc_type="lazy_dict"):
+    def __init__(self, user_embeddings, project_embeddings):
         self.user_embeddings = user_embeddings
         self.project_embeddings = project_embeddings
-        self.calc_type = calc_type  # matrix, lazy_dict, recalc (not cached)
-        if self.calc_type == "matrix":
-            self.interactions = user_embeddings @ project_embeddings.T
-        else:
-            self.interactions = {}
 
     def get_interaction(self, user_id, project_id):
-        if self.calc_type == "recalc":
-            return self.user_embeddings[user_id] @ self.project_embeddings[project_id].T
-        elif self.calc_type == "lazy_dict":
-            if (user_id, project_id) not in self.interactions:
-                self.interactions[user_id, project_id] = self.user_embeddings[user_id] @ \
-                                                     self.project_embeddings[project_id].T
-        return self.interactions[user_id, project_id]
+        raise NotImplementedError()
 
     def get_user_supplier(self, user_id):
-        return lambda project_id: self.get_interaction(user_id, project_id)
+        raise NotImplementedError()
 
 
-class SimpleInteractionsCalculator:
-    def __init__(self, user_embeddings, project_embeddings, calc_type="matrix"):
-        self.user_embeddings = user_embeddings
-        self.project_embeddings = project_embeddings
+class SimpleInteractionsCalculator(InteractionCalculator):
+    def __init__(self, user_embeddings, project_embeddings):
+        super().__init__(user_embeddings, project_embeddings)
 
     def get_interaction(self, user_id, project_id):
         return self.user_embeddings[user_id] @ self.project_embeddings[project_id]
@@ -42,10 +27,9 @@ class SimpleInteractionsCalculator:
         return lambda project_id: self.user_embeddings[user_id] @ self.project_embeddings[project_id]
 
 
-class MatrixInteractionCalculator:
-    def __init(self, user_embeddings, project_embeddings):
-        self.user_embeddings = user_embeddings
-        self.project_embeddings = project_embeddings
+class MatrixInteractionCalculator(InteractionCalculator):
+    def __init__(self, user_embeddings, project_embeddings):
+        super().__init__(user_embeddings, project_embeddings)
         self.interactions = user_embeddings @ project_embeddings.T
 
     def get_interaction(self, user_id, project_id):
@@ -55,10 +39,9 @@ class MatrixInteractionCalculator:
         return lambda project_id: self.interactions[user_id, project_id]
 
 
-class LazyInteractionsCalculator():
+class LazyInteractionsCalculator(InteractionCalculator):
     def __init__(self, user_embeddings, project_embeddings):
-        self.user_embeddings = user_embeddings
-        self.project_embeddings = project_embeddings
+        super().__init__(user_embeddings, project_embeddings)
         self.interactions = {}
 
     def get_interaction(self, user_id, project_id):
@@ -71,14 +54,14 @@ class LazyInteractionsCalculator():
         return lambda project_id: self.get_interaction(user_id, project_id)
 
 
-class RowInteractionsCalculator:
-    def __init__(self, users_embeddings, project_embeddings, projects_indexes, reversed_indexes):
-        self.users_embeddings = users_embeddings
-        self.project_embeddings = project_embeddings
+class RowInteractionsCalculator(InteractionCalculator):
+    def __init__(self, user_embeddings, project_embeddings, projects_indexes, reversed_indexes):
+        super().__init__(user_embeddings, project_embeddings)
         self.projects_indexes = projects_indexes
         self.reversed_indexes = reversed_indexes
-        self.interactions = [user_embedding @ project_embeddings[user_projects].T
-                             for user_embedding, user_projects in zip(users_embeddings, projects_indexes)]
+        self.interactions = {user_id: (self.user_embeddings[user_id]
+                                      @ self.project_embeddings[self.projects_indexes[user_id]].T)
+                             for user_id in self.user_embeddings}
 
     def get_interaction(self, user_id, project_id):
         return self.interactions[user_id][self.reversed_indexes[user_id][project_id]]
@@ -95,17 +78,16 @@ class RowInteractionsCalculator:
         return lambda project_id_compressed: user_row[project_id_compressed]
 
 
-class LazyRowInteractionsCalculator:
-    def __init__(self, users_embeddings, project_embeddings, projects_indexes, reversed_indexes):
-        self.users_embeddings = users_embeddings
-        self.project_embeddings = project_embeddings
+class LazyRowInteractionsCalculator(InteractionCalculator):
+    def __init__(self, user_embeddings, project_embeddings, projects_indexes, reversed_indexes):
+        super().__init__(user_embeddings, project_embeddings)
         self.projects_indexes = projects_indexes
         self.reversed_indexes = reversed_indexes
         self.interactions = {}
 
     def _ensure_calculated(self, user_id):
         if user_id not in self.interactions:
-            self.interactions[user_id] = self.users_embeddings[user_id] @ \
+            self.interactions[user_id] = self.user_embeddings[user_id] @ \
                                          self.project_embeddings[self.projects_indexes[user_id]].T
 
     def get_interaction(self, user_id, project_id):

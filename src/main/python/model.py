@@ -32,8 +32,9 @@ class Model:
         else:
             self.project_embeddings = projects_embeddings_prior
 
-        # self.project_indices = list(map(projects_index, self.users_histories))
-        # self.reversed_project_indices = list(map(reverse_projects_indices, self.project_indices))
+        # self.project_indices = {user_id: projects_index(history) for user_id, history in self.users_histories.items()}
+        # self.reversed_project_indices = {user_id: reverse_projects_indices(index)
+        #                                  for user_id, index in self.project_indices.items()}
         # self.history_for_lambda = [convert_history(history, reversed_projects_index)
         #                            for history, reversed_projects_index
         #                            in zip(self.users_histories, self.reversed_project_indices)]
@@ -48,7 +49,7 @@ class Model:
         ll = 0.
         users_derivatives = {k: np.zeros_like(v) for k, v in self.user_embeddings.items()}
         project_derivatives = {k: np.zeros_like(v) for k, v in self.project_embeddings.items()}
-        interaction_calculator = InteractionCalculator(self.user_embeddings, self.project_embeddings)
+        interaction_calculator = SimpleInteractionsCalculator(self.user_embeddings, self.project_embeddings)
         for user_id, user_history in self.users_histories.items():
             user_lambda = UserLambda(self.user_embeddings[user_id], self.beta, self.other_project_importance,
                                      interaction_calculator.get_user_supplier(user_id), derivative, self.square)
@@ -97,7 +98,7 @@ class Model:
         # users_diffs_squares = np.ones(self.user_embeddings.shape)  # * 1e-5
         projects_diffs_squares = {k: np.ones_like(v) for k, v in self.project_embeddings.items()}
         # projects_diffs_squares = np.ones(self.project_embeddings.shape)  # * 1e-5
-        interaction_calculator = InteractionCalculator(self.user_embeddings, self.project_embeddings, calc_type="recalc")
+        interaction_calculator = SimpleInteractionsCalculator(self.user_embeddings, self.project_embeddings)
         for optimization_iter in range(iter_num):
             for user_id, user_history in self.users_histories.items():
                 user_lambda = UserLambda(self.user_embeddings[user_id], self.beta, self.other_project_importance,
@@ -168,8 +169,8 @@ class Model:
         lr = self.learning_rate / self.data_size
         for user_id in self.user_embeddings:
             self.user_embeddings[user_id] += users_derivatives[user_id] * lr
-        for user_id in self.project_embeddings:
-            self.project_embeddings[user_id] += project_derivatives[user_id] * lr
+        for project_id in self.project_embeddings:
+            self.project_embeddings[project_id] += project_derivatives[project_id] * lr
         self.learning_rate *= self.decay_rate
 
 
@@ -312,8 +313,7 @@ class ModelApplication:
         self.beta = beta
         self.lambda_transform = lambda_transform
         self.other_project_importance = other_project_importance
-        self.interaction_calculator = InteractionCalculator(self.user_embeddings, self.project_embeddings,
-                                                            calc_type="lazy_dict")
+        self.interaction_calculator = LazyInteractionsCalculator(self.user_embeddings, self.project_embeddings)
         self.user_lambdas = {user_id: UserLambda(user_embedding, self.beta,
                                                  self.other_project_importance,
                                                  self.interaction_calculator.get_user_supplier(user_id),
