@@ -31,12 +31,17 @@ def toloka_prepare_data(data):
     users_history = {}
     user_to_index = {}
     project_to_index = {}
+    pr_deltas = []
     for val in data:
         user_id, session = toloka_raw_to_session(val, project_to_index)
         if user_id not in user_to_index:
             user_to_index[user_id] = len(user_to_index)
             users_history[user_to_index[user_id]] = []
         users_history[user_to_index[user_id]].append(session)
+        if session.pr_delta is not None and not math.isnan(session.pr_delta):
+            pr_deltas.append(session.pr_delta)
+    pr_deltas = np.array(pr_deltas)
+    print("mean pr_delta", np.mean(pr_deltas), np.std(pr_deltas))
     return users_history
 
 
@@ -67,15 +72,26 @@ def lastfm_raw_to_session(raw, project_to_index, last_time_done):
     return user_id, USession(project_to_index[project_id], start_ts, end_ts, pr_delta, n_tasks)
 
 
+def lastfm_make_sessions(users_history):
+    new_history = {}
+    for user_id, user_history in users_history.items():
+        new_history[user_id] = []
+        prev_session = None
+        for i, session in enumerate(user_history):
+            pass
+
+
 def lastfm_prepare_data(data):
     data[:, 2] = np.array(list(map(lambda x: time.mktime(time.strptime(x, "%Y-%m-%dT%H:%M:%SZ")), data[:, 2])))
     data = data[np.argsort(data[:, 2])]
+    print(np.max(data[:, 2]) - np.min(data[:, 2]))
     users_history = {}
     user_to_index = {}
     project_to_index = {}
     last_time_done = {}
     # make combination to session
     last_session = None
+    pr_deltas = []
     for val in data:
         user_id, session = lastfm_raw_to_session(val, project_to_index, last_time_done)
         if user_id not in user_to_index:
@@ -84,10 +100,22 @@ def lastfm_prepare_data(data):
         if last_session is not None and last_session.pid == session.pid:
             continue
         users_history[user_to_index[user_id]].append(session)
+        last_session = session
+        if session.pr_delta is not None:
+            pr_deltas.append(session.pr_delta)
+    print(project_to_index)
+    pr_deltas = np.array(pr_deltas)
+    print("mean pr_delta", np.mean(pr_deltas), np.std(pr_deltas))
     return users_history
 
 
 # common
+
+def interaction_matrix(users, projects):
+    users = np.array(list(users.values()))
+    projects = np.array(list(projects.values()))
+    return users @ projects.T
+
 
 def train_test_split(data, train_ratio):
     train, test = {}, {}
@@ -109,15 +137,23 @@ def train_test_split(data, train_ratio):
     return train, test
 
 
-def train(data, dim, beta, other_project_importance, learning_rate, iter_num):
+def train(data, eval, dim, beta, other_project_importance, learning_rate, iter_num):
     model = Model2Lambda(data, dim, learning_rate=learning_rate, eps=1, beta=beta,
                          other_project_importance=other_project_importance)
     for i in range(iter_num):
-        if i % 5 == 0:
-            print("{}-th iter, ll = {}".format(i, model.log_likelihood()))
+        # if i % 5 == 0 or i in [1, 2]:
+        #     print("{}-th iter, ll = {}".format(i, model.log_likelihood()))
+        print("{}-th iter, ll = {}".format(i, model.log_likelihood()))
         model.optimization_step()
+        model_application = ModelApplication(model.user_embeddings, model.project_embeddings, beta,
+                                             other_project_importance, model.default_lambda).fit(data)
+        return_time = return_time_mae(model_application, eval, samples_num=10)
+        print("return_time:", return_time)
+        # print(interaction_matrix(model.user_embeddings, model.project_embeddings))
+        print()
+    print(interaction_matrix(model.user_embeddings, model.project_embeddings))
     model_application = ModelApplication(model.user_embeddings, model.project_embeddings, beta,
-                                         other_project_importance).fit(data)
+                                         other_project_importance, model.default_lambda).fit(data)
     return model_application
 
 
@@ -125,18 +161,28 @@ def return_time_mae(model, data, samples_num=10):
     errors = 0.
     count = 0
     for user_id, user_history in data.items():
+        # prs = set()
         for i, session in enumerate(user_history):
-            if i > 0 and not math.isnan(session.pr_delta):
+            # prs.add(session.pid)
+            if i > 0 and session.pr_delta is not None and not math.isnan(session.pr_delta):
                 count += 1
                 expected_return_time = model.time_delta(user_id, session.pid, samples_num)
+                # expected_return_time = 0
                 errors += abs(expected_return_time - session.pr_delta)
             model.accept(user_id, session)
+        #     print(session.pid, "updated")
+        #     for pr in prs:
+        #         print(pr, model.get_lambda(user_id, pr))
+        #     print()
+        # print("#########")
+    # if count == 0:
+    #     return 1000000
     return errors / count
 
 
 def real_data_test(X, dim, beta, other_project_importance, learning_rate, iter_num, samples_num, train_ratio):
     X_tr, X_te = train_test_split(X, train_ratio)
-    model_application = train(X_tr, dim, beta, other_project_importance, learning_rate, iter_num)
+    model_application = train(X_tr, X_te, dim, beta, other_project_importance, learning_rate, iter_num)
     return_time = return_time_mae(model_application, X_te, samples_num=samples_num)
     print("return_time:", return_time)
 
@@ -144,9 +190,9 @@ def real_data_test(X, dim, beta, other_project_importance, learning_rate, iter_n
 def toloka_test():
     dim = 2
     beta = 0.001
-    other_project_importance = 0.3
-    learning_rate = 6.5
-    iter_num = 60
+    other_project_importance = 0.2
+    learning_rate = 1.8
+    iter_num = 15
     size = 10000
     samples_num = 10
     train_ratio = 0.7
@@ -160,10 +206,10 @@ def toloka_test():
 def lastfm_test():
     dim = 2
     beta = 0.001
-    other_project_importance = 0.3
-    learning_rate = 0.0005
+    other_project_importance = 0.1
+    learning_rate = 0.0001
     iter_num = 10
-    size = 1000
+    size = 10000
     samples_num = 10
     train_ratio = 0.7
     raw_data = lastfm_read_raw_data(LASTFM_FILENAME, size)

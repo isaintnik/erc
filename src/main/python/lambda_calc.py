@@ -111,16 +111,16 @@ class LazyRowInteractionsCalculator(InteractionCalculator):
 
 class UserLambda:
     def __init__(self, user_embedding, beta, other_project_importance, interactions_supplier,
-                 derivative=False, square=False):
+                 default_lambda=0.1, lambda_confidence=10, derivative=False, square=False):
         self.dim = len(user_embedding)
         self.beta = beta
         self.other_project_importance = other_project_importance
         self.derivative = derivative
         self.user_embedding = user_embedding
         self.interactions_supplier = interactions_supplier
-        self.avg_time_between_sessions = 5
-        self.numerator = 10.
-        self.denominator = 10.
+        self.avg_time_between_sessions = 1
+        self.numerator = default_lambda * lambda_confidence
+        self.denominator = lambda_confidence
         self.user_d_numerator = np.zeros_like(user_embedding)
         self.num_denom_by_project = np.zeros((1, 2))
         self.user_d_numerators_by_project = np.zeros((1, self.dim))
@@ -131,7 +131,7 @@ class UserLambda:
         self.last_project_derivative_numerator = {}
 
     def update(self, project_embedding, session, delta_time):
-        e = np.exp(-self.beta)  # * delta_time)
+        e = np.exp(-self.beta) if delta_time >= 0 else 1.  # * delta_time)
         ua = self.interactions_supplier(session.pid)
         if session.pid not in self.projects_to_ind:
             self.projects_to_ind[session.pid] = len(self.projects_to_ind)
