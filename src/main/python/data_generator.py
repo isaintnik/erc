@@ -14,8 +14,9 @@ AVG_TASKS_ON_SESSION = 3.73
 class StepGenerator:
 
     def __init__(self, user_embedding=None, project_embeddings=None, beta=0.001,
-                 other_project_importance=0.8, start_from=0, max_lifetime=50000, verbose=False):
-        self.model = ModelApplication({0: user_embedding}, project_embeddings, beta, other_project_importance)
+                 other_project_importance=0.8, default_lambda=1., start_from=0, max_lifetime=50000, verbose=False):
+        self.model = ModelApplication({0: user_embedding}, project_embeddings, beta, other_project_importance,
+                                      default_lambda=default_lambda)
         self.n_projects = len(project_embeddings)
         self.start_from = start_from
         self.max_lifetime = max_lifetime
@@ -72,10 +73,10 @@ class StepGenerator:
 
         while current_ts < self.max_lifetime:
 
-            # pid, time_delta, inner_delta = self._select_project_at_current_time(projects_ids)
-            pid, time_delta, inner_delta = self._select_project_step_by_step(projects_ids, last_time_done, current_ts)
+            pid, time_delta, inner_delta = self._select_project_at_current_time(projects_ids)
+            # pid, time_delta, inner_delta = self._select_project_step_by_step(projects_ids, last_time_done, current_ts)
             # pid, time_delta, inner_delta = self._select_project_with_future_steps(projects_ids, last_time_done,
-                                                                                  # next_time_done, current_ts)
+            #                                                                       next_time_done, current_ts)
             if self.verbose:
                 print("1.", pid, time_delta, inner_delta)
             n_tasks = np.random.poisson(AVG_TASKS_ON_SESSION) + 1
@@ -111,8 +112,8 @@ class StepGenerator:
         return generation_summary
 
 
-def generate_history(*, users, projects, beta, other_project_importance, start_from=0, max_lifetime=50000):
+def generate_history(*, users, projects, beta, other_project_importance, default_lambda, start_from=0, max_lifetime=50000):
     return {user_id: StepGenerator(
         user_embedding=user_embedding, project_embeddings=projects, beta=beta,
-        other_project_importance=other_project_importance, start_from=start_from, max_lifetime=max_lifetime,
-        verbose=False).generate_user_steps() for user_id, user_embedding in users.items()}
+        other_project_importance=other_project_importance, default_lambda=default_lambda, start_from=start_from,
+        max_lifetime=max_lifetime, verbose=False).generate_user_steps() for user_id, user_embedding in users.items()}

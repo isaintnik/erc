@@ -117,12 +117,13 @@ def init_compare_test():
     dim = 2
     beta = 0.001
     other_project_importance = 0.3
+    default_lambda = 1.
     learning_rate = 0.4
-    iter_num = 40
+    iter_num = 20
     users, projects = generate_vectors(users_num, projects_num, dim, mean=0.5, std_dev=0.2)
     users_init, projects_init = generate_vectors(users_num, projects_num, dim, mean=0.3, std_dev=0.2)
     X = generate_history(users=users, projects=projects, beta=beta, other_project_importance=other_project_importance,
-                         start_from=10000, max_lifetime=100000)
+                         default_lambda=default_lambda, start_from=1000, max_lifetime=10000)
     print(X)
     print(len(X[0]))
     print("data generated")

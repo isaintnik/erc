@@ -65,7 +65,7 @@ def lastfm_raw_to_session(raw, project_to_index, last_time_done):
     start_ts = ts / (60 * 60)
     end_ts = 0  # don't used
     pr_delta = None if project_to_index[project_id] not in last_time_done \
-        else ts - last_time_done[project_to_index[project_id]]
+        else (ts - last_time_done[project_to_index[project_id]]) / (60 * 60)
     n_tasks = 1
     user_id = raw[1]
     last_time_done[project_to_index[project_id]] = ts
@@ -78,7 +78,8 @@ def lastfm_make_sessions(users_history):
         new_history[user_id] = []
         prev_session = None
         for i, session in enumerate(user_history):
-            pass
+            if prev_session is None or prev_session.pid == session.pid:
+                pass
 
 
 def lastfm_prepare_data(data):
@@ -117,14 +118,17 @@ def interaction_matrix(users, projects):
     return users @ projects.T
 
 
-def train_test_split(data, train_ratio):
-    train, test = {}, {}
+def get_split_time(data, train_ratio):
     start_times = []
     for user_id, user_history in data.items():
-        train[user_id] = []
         for session in user_history:
             start_times.append(session.start_ts)
-    split_time = np.percentile(np.array(start_times), train_ratio * 100)
+    return np.percentile(np.array(start_times), train_ratio * 100)
+
+
+def train_test_split(data, train_ratio):
+    train, test = {}, {}
+    split_time = get_split_time(data, train_ratio)
     # print("split time", split_time)
     for user_id, user_history in data.items():
         train[user_id] = []
@@ -140,18 +144,20 @@ def train_test_split(data, train_ratio):
 def train(data, eval, dim, beta, other_project_importance, learning_rate, iter_num):
     model = Model2Lambda(data, dim, learning_rate=learning_rate, eps=1, beta=beta,
                          other_project_importance=other_project_importance)
-    for i in range(iter_num):
-        # if i % 5 == 0 or i in [1, 2]:
-        #     print("{}-th iter, ll = {}".format(i, model.log_likelihood()))
-        print("{}-th iter, ll = {}".format(i, model.log_likelihood()))
-        model.optimization_step()
-        model_application = ModelApplication(model.user_embeddings, model.project_embeddings, beta,
-                                             other_project_importance, model.default_lambda).fit(data)
-        return_time = return_time_mae(model_application, eval, samples_num=10)
-        print("return_time:", return_time)
-        # print(interaction_matrix(model.user_embeddings, model.project_embeddings))
-        print()
-    print(interaction_matrix(model.user_embeddings, model.project_embeddings))
+    print("ll = {}".format(model.log_likelihood()))
+    model.glove_like_optimisation(iter_num=iter_num, verbose=True, eval=eval)
+    # for i in range(iter_num):
+    #     # if i % 5 == 0 or i in [1, 2]:
+    #     #     print("{}-th iter, ll = {}".format(i, model.log_likelihood()))
+    #     print("{}-th iter, ll = {}".format(i, model.log_likelihood()))
+    #     model.optimization_step()
+    #     model_application = ModelApplication(model.user_embeddings, model.project_embeddings, beta,
+    #                                          other_project_importance, model.default_lambda).fit(data)
+    #     return_time = return_time_mae(model_application, eval, samples_num=10)
+    #     print("return_time:", return_time)
+    #     print()
+    # print(interaction_matrix(model.user_embeddings, model.project_embeddings))
+    # print(np.mean(interaction_matrix(model.user_embeddings, model.project_embeddings)))
     model_application = ModelApplication(model.user_embeddings, model.project_embeddings, beta,
                                          other_project_importance, model.default_lambda).fit(data)
     return model_application
@@ -161,23 +167,35 @@ def return_time_mae(model, data, samples_num=10):
     errors = 0.
     count = 0
     for user_id, user_history in data.items():
-        # prs = set()
         for i, session in enumerate(user_history):
-            # prs.add(session.pid)
-            if i > 0 and session.pr_delta is not None and not math.isnan(session.pr_delta):
+            if i > 0 and session.pr_delta is not None and not math.isnan(session.pr_delta) and session.n_tasks > 0:
                 count += 1
                 expected_return_time = model.time_delta(user_id, session.pid, samples_num)
                 # expected_return_time = 0
                 errors += abs(expected_return_time - session.pr_delta)
             model.accept(user_id, session)
-        #     print(session.pid, "updated")
-        #     for pr in prs:
-        #         print(pr, model.get_lambda(user_id, pr))
-        #     print()
-        # print("#########")
-    # if count == 0:
-    #     return 1000000
     return errors / count
+
+
+def where_fails(model, data, samples_num=10):
+    session_predictions = []
+    zero_pr_delta = 0
+    split_time = get_split_time(data, 0.7)
+    for user_id, user_history in data.items():
+        for i, session in enumerate(user_history):
+            if session.start_ts < split_time:
+                continue
+            if i > 0 and session.pr_delta is not None and not math.isnan(session.pr_delta) and session.n_tasks > 0:
+                if session.pr_delta < 1e-5:
+                    zero_pr_delta += 1
+                expected_return_time = model.time_delta(user_id, session.pid, samples_num)
+                # expected_return_time = 0
+                session_predictions.append((expected_return_time, session, i))
+            model.accept(user_id, session)
+    # session_predictions = sorted(session_predictions, key=lambda x: -abs(x[0] - x[1].pr_delta))
+    print("zero pr_delta rate:", zero_pr_delta / len(session_predictions), zero_pr_delta, len(session_predictions))
+    for pr_time, session, ind in session_predictions:
+        print(session, pr_time, ind)
 
 
 def real_data_test(X, dim, beta, other_project_importance, learning_rate, iter_num, samples_num, train_ratio):
@@ -185,14 +203,16 @@ def real_data_test(X, dim, beta, other_project_importance, learning_rate, iter_n
     model_application = train(X_tr, X_te, dim, beta, other_project_importance, learning_rate, iter_num)
     return_time = return_time_mae(model_application, X_te, samples_num=samples_num)
     print("return_time:", return_time)
+    # where_fails(model_application, X, samples_num=samples_num)
 
 
 def toloka_test():
     dim = 2
     beta = 0.001
     other_project_importance = 0.2
-    learning_rate = 1.8
-    iter_num = 15
+    # learning_rate = 1.5
+    learning_rate = 0.1
+    iter_num = 2
     size = 10000
     samples_num = 10
     train_ratio = 0.7
@@ -207,9 +227,10 @@ def lastfm_test():
     dim = 2
     beta = 0.001
     other_project_importance = 0.1
-    learning_rate = 0.0001
-    iter_num = 10
-    size = 10000
+    # learning_rate = 0.03  # sgd
+    learning_rate = 0.03  # glove
+    iter_num = 20
+    size = 50000
     samples_num = 10
     train_ratio = 0.7
     raw_data = lastfm_read_raw_data(LASTFM_FILENAME, size)
