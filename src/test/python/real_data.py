@@ -1,5 +1,6 @@
 import time
 import math
+import pickle
 import numpy as np
 import pandas as pd
 from src.main.python.model import USession, Model2Lambda, ModelApplication
@@ -141,9 +142,17 @@ def train_test_split(data, train_ratio):
     return train, test
 
 
-def train(data, eval, dim, beta, other_project_importance, learning_rate, iter_num, optimization_type="sgd"):
-    model = Model2Lambda(data, dim, learning_rate=learning_rate, eps=1, beta=beta,
-                         other_project_importance=other_project_importance)
+def train(data, eval, dim, beta, other_project_importance, learning_rate, iter_num, optimization_type="sgd",
+          model_filename=None):
+    try:
+        with open(model_filename, 'rb') as model_file:
+            model = pickle.load(model_file)
+            print('Model loaded')
+    except FileNotFoundError:
+        model = Model2Lambda(data, dim, learning_rate=learning_rate, eps=1, beta=beta,
+                             other_project_importance=other_project_importance)
+        print('Model not found, a new one was created')
+
     print("ll = {}".format(model.log_likelihood()))
     if optimization_type == "glove":
         model.glove_like_optimisation(iter_num=iter_num, verbose=True, eval=eval)
@@ -160,6 +169,13 @@ def train(data, eval, dim, beta, other_project_importance, learning_rate, iter_n
             print()
         print(interaction_matrix(model.user_embeddings, model.project_embeddings))
         print(np.mean(interaction_matrix(model.user_embeddings, model.project_embeddings)))
+
+    try:
+        with open(model_filename, 'wb') as model_file:
+            pickle.dump(model, model_file)
+    except FileNotFoundError:
+        print('Model saving failed')
+
     model_application = ModelApplication(model.user_embeddings, model.project_embeddings, beta,
                                          other_project_importance, model.default_lambda).fit(data)
     return model_application
