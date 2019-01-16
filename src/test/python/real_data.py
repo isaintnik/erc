@@ -4,7 +4,7 @@ import random
 import pickle
 import numpy as np
 import pandas as pd
-from src.main.python.model import USession, Model2Lambda, ModelApplication
+from src.main.python.model import USession, Model2Lambda
 
 
 # filenames
@@ -246,8 +246,7 @@ def train(data, eval, dim, beta, other_project_importance, learning_rate, iter_n
     except FileNotFoundError:
         print('Model saving failed')
 
-    model_application = ModelApplication(model.user_embeddings, model.project_embeddings, beta,
-                                         other_project_importance, model.default_lambda).fit(data)
+    model_application = model.get_applicable()
     return model_application
 
 
@@ -337,6 +336,33 @@ def lastfm_test():
     print("Users num:", len(X))
     real_data_test(X, dim, beta, other_project_importance, learning_rate, iter_num, samples_num, train_ratio,
                    optimization_type, model_filename=None)
+
+
+def lastfm_train(model_filename, data_filename):
+    dim = 5
+    beta = 0.001
+    other_project_importance = 0.1
+    # learning_rate = 0.03  # sgd
+    learning_rate = 0.001  # glove
+    optimization_type = "glove"
+    iter_num = 20
+    size = 50000
+    samples_num = 10
+    train_ratio = 0.75
+    raw_data = lastfm_read_raw_data(data_filename, size)
+    X = lastfm_prepare_data(raw_data)
+    print(X)
+    print("objects_num:", size)
+    print("users_num:", len(X))
+    X_tr, X_te = train_test_split(X, train_ratio)
+    train(X_tr, X_te, dim, beta, other_project_importance, learning_rate, iter_num, optimization_type, model_filename)
+
+
+def lastfm_eval(model_filename, data_filename):
+    with open(model_filename, 'rb') as model_file:
+        model = pickle.load(model_file)
+    return_time = return_time_mae(model.get_application(), X_te, samples_num=samples_num)
+    print("return_time:", return_time)
 
 
 if __name__ == "__main__":
