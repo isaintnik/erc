@@ -27,7 +27,7 @@ class Model:
         self.users_histories = users_histories
         self.emb_dim = dim
         self.learning_rate = learning_rate
-        self.decay_rate = 0.97
+        self.decay_rate = 0.95
         self.beta = beta
         self.eps = eps
         self.square = square
@@ -113,19 +113,19 @@ class Model:
             # if not derivative:
             #     print({s.pid: user_lambda.project_lambdas[s.pid].get() for s in last_times_sessions})
         if derivative:
-            if math.isnan(users_derivatives[0][0]) or math.isnan(project_derivatives[0][0]):
-                print(users_derivatives)
+            # if math.isnan(users_derivatives[0][0]) or math.isnan(project_derivatives[0][0]):
+            #     print(users_derivatives)
             return users_derivatives, project_derivatives
         return ll
 
     def glove_like_optimisation(self, iter_num=30, verbose=False, eval=None):
         lr = self.learning_rate  # / self.data_size
         self.learning_rate *= self.decay_rate
-        discount_decay = 0.999
+        discount_decay = 0.99
         # we should check, that python change embeddings everywhere while optimizing
-        users_diffs_squares = {k: np.ones_like(v) for k, v in self.user_embeddings.items()}
+        users_diffs_squares = {k: np.ones_like(v) * 1e-1 for k, v in self.user_embeddings.items()}
         # users_diffs_squares = np.ones(self.user_embeddings.shape)  # * 1e-5
-        projects_diffs_squares = {k: np.ones_like(v) for k, v in self.project_embeddings.items()}
+        projects_diffs_squares = {k: np.ones_like(v) * 1e-1 for k, v in self.project_embeddings.items()}
         # projects_diffs_squares = np.ones(self.project_embeddings.shape)  # * 1e-5
         interaction_calculator = SimpleInteractionsCalculator(self.user_embeddings, self.project_embeddings)
         for optimization_iter in range(iter_num):
@@ -207,8 +207,8 @@ class Model:
 
     def optimization_step(self):
         users_derivatives, project_derivatives = self.ll_derivative()
-        if math.isnan(users_derivatives[0][0]):
-            print(users_derivatives)
+        # if math.isnan(users_derivatives[0][0]):
+        #     print(users_derivatives)
         lr = self.learning_rate / self.data_size
         for user_id in self.user_embeddings:
             self.user_embeddings[user_id] += users_derivatives[user_id] * lr
@@ -299,8 +299,8 @@ class Model2Lambda(Model):
         # so slow
         for project_id in lam_projects_d:
             project_derivatives[project_id] += cur_ll_d * lam_projects_d[project_id]
-        if math.isnan(users_derivatives[0][0]) or math.isnan(project_derivatives[0][0]):
-            print(users_derivatives)
+        # if math.isnan(users_derivatives[0][0]) or math.isnan(project_derivatives[0][0]):
+        #    print(users_derivatives)
 
     def _update_last_derivative(self, user_session, user_id, lambdas_by_project, users_derivatives, project_derivatives):
         # lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid)
@@ -366,6 +366,7 @@ class ModelApplication:
                                                  self.interaction_calculator.get_user_supplier(user_id),
                                                  default_lambda=default_lambda, lambda_confidence=1, derivative=False)
                              for user_id, user_embedding in user_embeddings.items()}
+        self.default_user_id = list(user_embeddings.keys())[0]
         self.last_user_session = {}
         self.lambda_values = {user_id: {} for user_id in user_embeddings}
 
@@ -383,7 +384,8 @@ class ModelApplication:
         # fix default lambda
         if user_id not in self.user_lambdas or project_id not in self.project_embeddings or \
                 user_id not in self.lambda_values or project_id not in self.lambda_values[user_id]:
-            return self.lambda_transform(self.user_lambdas.get(user_id, 0).get(project_id if project_id in self.project_embeddings else -1))
+            return self.lambda_transform(self.user_lambdas.get(user_id, self.user_lambdas[self.default_user_id])
+                                         .get(project_id if project_id in self.project_embeddings else -1))
         return self.lambda_values[user_id][project_id]
 
     def time_delta(self, user_id, project_id, size=1):

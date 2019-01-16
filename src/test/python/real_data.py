@@ -1,5 +1,6 @@
 import time
 import math
+import random
 import pickle
 import numpy as np
 import pandas as pd
@@ -86,7 +87,7 @@ def lastfm_make_sessions(users_history):
 def lastfm_prepare_data(data):
     data[:, 2] = np.array(list(map(lambda x: time.mktime(time.strptime(x, "%Y-%m-%dT%H:%M:%SZ")), data[:, 2])))
     data = data[np.argsort(data[:, 2])]
-    print(np.max(data[:, 2]) - np.min(data[:, 2]))
+    print("Max time delta =", np.max(data[:, 2]) - np.min(data[:, 2]))
     users_history = {}
     user_to_index = {}
     project_to_index = {}
@@ -105,9 +106,9 @@ def lastfm_prepare_data(data):
         last_session = session
         if session.pr_delta is not None:
             pr_deltas.append(session.pr_delta)
-    print(project_to_index)
+    # print(project_to_index)
     pr_deltas = np.array(pr_deltas)
-    print("mean pr_delta", np.mean(pr_deltas), np.std(pr_deltas))
+    print("Mean pr_delta = {}, std = {}".format(np.mean(pr_deltas), np.std(pr_deltas)))
     return users_history
 
 
@@ -117,6 +118,57 @@ def interaction_matrix(users, projects):
     users = np.array(list(users.values()))
     projects = np.array(list(projects.values()))
     return users @ projects.T
+
+
+def top_data(data):
+    users_stat = {}
+    projects_stat = {}
+    for uid, user_history in data.items():
+        users_stat[uid] = len(user_history)
+        for session in user_history:
+            projects_stat.setdefault(session.pid, 0)
+            projects_stat[session.pid] += 1
+    users_stat = list(users_stat.items())
+    projects_stat = list(projects_stat.items())
+    sorted(users_stat, key=lambda x: -x[1])
+    sorted(projects_stat, key=lambda x: -x[1])
+    return [uid for (uid, value) in users_stat], [pid for (pid, value) in projects_stat]
+
+
+def random_data(data):
+    users_stat = set()
+    projects_stat = set()
+    for uid, user_history in data.items():
+        users_stat.add(uid)
+        for session in user_history:
+            projects_stat.add(session.pid)
+    users_stat = list(users_stat)
+    projects_stat = list(projects_stat)
+    random.shuffle(users_stat)
+    random.shuffle(projects_stat)
+    return users_stat, projects_stat
+
+
+def filter_data(data, users_num=None, projects_num=None):
+    users_stat, projects_stat = random_data(data)
+    user_num = len(users_stat) if users_num is None else min(users_num, len(users_stat))
+    projects_num = len(projects_stat) if projects_num is None else min(projects_num, len(projects_stat))
+    selected_users = set(users_stat[:user_num])
+    selected_projects = set(projects_stat[:projects_num])
+    before_events_num, after_events_num = 0, 0
+    for uid in list(data.keys()):
+        before_events_num += len(data[uid])
+        if uid in selected_users:
+            user_history = data[uid]
+            data[uid] = []
+            for session in user_history:
+                if session.pid in selected_projects:
+                    data[uid].append(session)
+                    after_events_num += 1
+        else:
+            del data[uid]
+    print("Events num before = {}, after = {}".format(before_events_num, after_events_num))
+    return data
 
 
 def get_split_time(data, train_ratio):
@@ -132,6 +184,8 @@ def train_test_split(data, train_ratio):
     split_time = get_split_time(data, train_ratio)
     # print("split time", split_time)
     for user_id, user_history in data.items():
+        if user_history[0].start_ts >= split_time or user_history[-1].start_ts <= split_time:
+            continue
         train[user_id] = []
         test[user_id] = []
         for i, session in enumerate(user_history):
@@ -142,12 +196,31 @@ def train_test_split(data, train_ratio):
     return train, test
 
 
+def sgd_optimization(model, data, eval, iter_num):
+    for i in range(iter_num):
+        # if i % 5 == 0 or i in [1, 2]:
+        #     print("{}-th iter, ll = {}".format(i, model.log_likelihood()))
+        model.optimization_step()
+        print("{}-th iter, ll = {}".format(i, model.log_likelihood()))
+        model_application = ModelApplication(model.user_embeddings, model.project_embeddings, model.beta,
+                                             model.other_project_importance, model.default_lambda).fit(data)
+        return_time = return_time_mae(model_application, eval, samples_num=10)
+        print("return_time:", return_time)
+        print()
+    # print(interaction_matrix(model.user_embeddings, model.project_embeddings))
+    # print(np.mean(interaction_matrix(model.user_embeddings, model.project_embeddings)))
+
+
 def train(data, eval, dim, beta, other_project_importance, learning_rate, iter_num, optimization_type="sgd",
           model_filename=None):
     try:
         with open(model_filename, 'rb') as model_file:
             model = pickle.load(model_file)
             print('Model loaded')
+    except TypeError:
+        model = Model2Lambda(data, dim, learning_rate=learning_rate, eps=1, beta=beta,
+                             other_project_importance=other_project_importance)
+        print('Model filename not passed')
     except FileNotFoundError:
         model = Model2Lambda(data, dim, learning_rate=learning_rate, eps=1, beta=beta,
                              other_project_importance=other_project_importance)
@@ -156,23 +229,20 @@ def train(data, eval, dim, beta, other_project_importance, learning_rate, iter_n
     print("ll = {}".format(model.log_likelihood()))
     if optimization_type == "glove":
         model.glove_like_optimisation(iter_num=iter_num, verbose=True, eval=eval)
-    else:
-        for i in range(iter_num):
-            # if i % 5 == 0 or i in [1, 2]:
-            #     print("{}-th iter, ll = {}".format(i, model.log_likelihood()))
-            print("{}-th iter, ll = {}".format(i, model.log_likelihood()))
-            model.optimization_step()
-            model_application = ModelApplication(model.user_embeddings, model.project_embeddings, beta,
-                                                 other_project_importance, model.default_lambda).fit(data)
-            return_time = return_time_mae(model_application, eval, samples_num=10)
-            print("return_time:", return_time)
-            print()
-        print(interaction_matrix(model.user_embeddings, model.project_embeddings))
-        print(np.mean(interaction_matrix(model.user_embeddings, model.project_embeddings)))
+    elif optimization_type == "sgd":
+        sgd_optimization(model, data, eval, iter_num)
+    elif "mix":
+        # model.learning_rate /= 10
+        k = 3
+        model.glove_like_optimisation(iter_num=k, verbose=True, eval=eval)
+        model.learning_rate *= 5
+        sgd_optimization(model, data, eval, iter_num - k)
 
     try:
         with open(model_filename, 'wb') as model_file:
             pickle.dump(model, model_file)
+    except TypeError:
+        print('Filename for model saving is not passed')
     except FileNotFoundError:
         print('Model saving failed')
 
@@ -217,10 +287,10 @@ def where_fails(model, data, samples_num=10):
 
 
 def real_data_test(X, dim, beta, other_project_importance, learning_rate, iter_num, samples_num, train_ratio,
-                   optimization_type):
+                   optimization_type, model_filename=None):
     X_tr, X_te = train_test_split(X, train_ratio)
     model_application = train(X_tr, X_te, dim, beta, other_project_importance, learning_rate, iter_num,
-                              optimization_type)
+                              optimization_type, model_filename=model_filename)
     return_time = return_time_mae(model_application, X_te, samples_num=samples_num)
     print("return_time:", return_time)
     # where_fails(model_application, X, samples_num=samples_num)
@@ -246,23 +316,27 @@ def toloka_test():
 
 
 def lastfm_test():
-    dim = 2
+    dim = 5
     beta = 0.001
     other_project_importance = 0.1
     # learning_rate = 0.03  # sgd
-    learning_rate = 0.03  # glove
-    optimization_type = "glove"
-    iter_num = 20
-    size = 50000
+    learning_rate = 0.001  # glove
+    optimization_type = "mix"
+    iter_num = 10
+    size = 1 * 1000 * 1000
     samples_num = 10
-    train_ratio = 0.7
+    train_ratio = 0.75
+    users_num = 1000
+    projects_num = 3000
+    model_filename = "lastfm_1k_3k_top.model"
     raw_data = lastfm_read_raw_data(LASTFM_FILENAME, size)
     X = lastfm_prepare_data(raw_data)
-    print(X)
-    print("objects_num:", size)
-    print("users_num:", len(X))
+    print("Raw events num:", size)
+    X = filter_data(X, users_num=users_num, projects_num=projects_num)
+    # print(X)
+    print("Users num:", len(X))
     real_data_test(X, dim, beta, other_project_importance, learning_rate, iter_num, samples_num, train_ratio,
-                   optimization_type)
+                   optimization_type, model_filename=None)
 
 
 if __name__ == "__main__":
