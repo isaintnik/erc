@@ -187,8 +187,7 @@ class Model:
             if verbose:  # and (optimization_iter % 5 == 0 or optimization_iter in [1, 2]):
                 print("{}-th iter, ll = {}".format(optimization_iter, self.log_likelihood()))
                 if eval is not None:
-                    model_application = ModelApplication(self.user_embeddings, self.project_embeddings, self.beta,
-                                                         self.other_project_importance, self.default_lambda).fit(self.users_histories)
+                    model_application = self.get_applicable()
                     return_time = return_time_mae(model_application, eval, samples_num=10)
                     print("return_time:", return_time)
                 print()
@@ -204,6 +203,11 @@ class Model:
 
     def _update_last_derivative(self, user_session, user_id, lambdas_by_project, users_derivatives, project_derivatives):
         raise NotImplementedError()
+
+    def get_applicable(self):
+        # TODO: decide something with lambda square
+        return ApplicableModel(self.user_embeddings, self.project_embeddings, self.beta, self.other_project_importance,
+                               self.default_lambda).fit(self.users_histories)
 
     def optimization_step(self):
         users_derivatives, project_derivatives = self.ll_derivative()
@@ -352,7 +356,7 @@ class ModelExpLambda(Model):
         project_derivatives[user_session.pid] -= np.exp(lam) * user_session.pr_delta * lam_projects_d
 
 
-class ModelApplication:
+class ApplicableModel:
     def __init__(self, user_embeddings, project_embeddings, beta, other_project_importance, default_lambda,
                  lambda_transform=lambda x: x ** 2):
         self.user_embeddings = user_embeddings
