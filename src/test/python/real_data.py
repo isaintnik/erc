@@ -150,7 +150,7 @@ def random_data(data):
 
 
 def filter_data(data, users_num=None, projects_num=None):
-    users_stat, projects_stat = random_data(data)
+    users_stat, projects_stat = top_data(data)
     user_num = len(users_stat) if users_num is None else min(users_num, len(users_stat))
     projects_num = len(projects_stat) if projects_num is None else min(projects_num, len(projects_stat))
     selected_users = set(users_stat[:user_num])
@@ -212,30 +212,34 @@ def sgd_optimization(model, data, eval, iter_num):
 
 
 def train(data, eval, dim, beta, other_project_importance, learning_rate, iter_num, optimization_type="sgd",
-          model_filename=None):
-    try:
-        with open(model_filename, 'rb') as model_file:
-            model = pickle.load(model_file)
-            print('Model loaded')
-    except TypeError:
+          model_filename=None, load=False):
+    loaded = False
+    if load:
+        try:
+            with open(model_filename, 'rb') as model_file:
+                model = pickle.load(model_file)
+                print('Model loaded')
+                loaded = True
+        except TypeError:
+            print('Model filename not passed')
+        except FileNotFoundError:
+            print('Model not found, a new one was created')
+    if not loaded:
         model = Model2Lambda(data, dim, learning_rate=learning_rate, eps=1, beta=beta,
                              other_project_importance=other_project_importance)
-        print('Model filename not passed')
-    except FileNotFoundError:
-        model = Model2Lambda(data, dim, learning_rate=learning_rate, eps=1, beta=beta,
-                             other_project_importance=other_project_importance)
-        print('Model not found, a new one was created')
 
-    print("ll = {}".format(model.log_likelihood()))
+    model_application = ModelApplication(model.user_embeddings, model.project_embeddings, model.beta,
+                                         model.other_project_importance, model.default_lambda).fit(data)
+    print("start ll = {}, return_time = {}".format(model.log_likelihood(),
+                                                   return_time_mae(model_application, eval, samples_num=10)))
     if optimization_type == "glove":
         model.glove_like_optimisation(iter_num=iter_num, verbose=True, eval=eval)
     elif optimization_type == "sgd":
         sgd_optimization(model, data, eval, iter_num)
     elif "mix":
-        # model.learning_rate /= 10
-        k = 3
+        k = 2
         model.glove_like_optimisation(iter_num=k, verbose=True, eval=eval)
-        model.learning_rate *= 5
+        model.learning_rate = 0.01
         sgd_optimization(model, data, eval, iter_num - k)
 
     try:
@@ -287,10 +291,10 @@ def where_fails(model, data, samples_num=10):
 
 
 def real_data_test(X, dim, beta, other_project_importance, learning_rate, iter_num, samples_num, train_ratio,
-                   optimization_type, model_filename=None):
+                   optimization_type, model_filename=None, load=False):
     X_tr, X_te = train_test_split(X, train_ratio)
     model_application = train(X_tr, X_te, dim, beta, other_project_importance, learning_rate, iter_num,
-                              optimization_type, model_filename=model_filename)
+                              optimization_type, model_filename, load)
     return_time = return_time_mae(model_application, X_te, samples_num=samples_num)
     print("return_time:", return_time)
     # where_fails(model_application, X, samples_num=samples_num)
@@ -316,31 +320,31 @@ def toloka_test():
 
 
 def lastfm_test():
-    dim = 5
+    dim = 15
     beta = 0.001
     other_project_importance = 0.1
-    # learning_rate = 0.03  # sgd
-    learning_rate = 0.001  # glove
+    learning_rate = 0.0003
     optimization_type = "mix"
     iter_num = 10
-    size = 1 * 1000 * 1000
+    size = 1 * 2000 * 1000
     samples_num = 10
     train_ratio = 0.75
     users_num = 1000
     projects_num = 3000
-    model_filename = "lastfm_1k_3k_top.model"
+    model_filename = "lastfm_1M_1k_3k_top_2.model"
+    load = False
     raw_data = lastfm_read_raw_data(LASTFM_FILENAME, size)
     X = lastfm_prepare_data(raw_data)
-    print("Raw events num:", size)
+    print("Raw events num:", raw_data.shape)
     X = filter_data(X, users_num=users_num, projects_num=projects_num)
-    # print(X)
     print("Users num:", len(X))
     real_data_test(X, dim, beta, other_project_importance, learning_rate, iter_num, samples_num, train_ratio,
-                   optimization_type, model_filename=None)
+                   optimization_type, model_filename, load=load)
 
 
 if __name__ == "__main__":
     np.random.seed(3)
+    random.seed(3)
     start_time = time.time()
     # toloka_test()
     lastfm_test()
