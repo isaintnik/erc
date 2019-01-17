@@ -1,5 +1,5 @@
 import numpy as np
-from src.main.python.model import ModelApplication, USession
+from src.main.python.model import ApplicableModel, USession
 
 USER_IDX = 0
 TS_START_IDX = 1
@@ -15,8 +15,8 @@ class StepGenerator:
 
     def __init__(self, user_embedding=None, project_embeddings=None, beta=0.001,
                  other_project_importance=0.8, default_lambda=1., start_from=0, max_lifetime=50000, verbose=False):
-        self.model = ModelApplication({0: user_embedding}, project_embeddings, beta, other_project_importance,
-                                      default_lambda=default_lambda)
+        self.model = ApplicableModel({0: user_embedding}, project_embeddings, beta, other_project_importance,
+                                     default_lambda=default_lambda)
         self.n_projects = len(project_embeddings)
         self.start_from = start_from
         self.max_lifetime = max_lifetime

@@ -2,12 +2,16 @@ import time
 import math
 import random
 import pickle
+import argparse
 import numpy as np
 import pandas as pd
-from src.main.python.model import USession, Model2Lambda, ModelApplication
+from src.main.python.model import USession, Model2Lambda
 
 
 # filenames
+TOLOKA_FILENAME = "/Users/akhvorov/data/mlimlab/erc/datasets/sessions_2018_10_01_2018_10_02"
+LASTFM_FILENAME = "/Users/akhvorov/data/mlimlab/erc/datasets/lastfm-dataset-1K/" \
+                  "userid-timestamp-artid-artname-traid-traname_1M.tsv"
 
 
 # toloka
@@ -202,8 +206,7 @@ def sgd_optimization(model, data, eval, iter_num):
         #     print("{}-th iter, ll = {}".format(i, model.log_likelihood()))
         model.optimization_step()
         print("{}-th iter, ll = {}".format(i, model.log_likelihood()))
-        model_application = ModelApplication(model.user_embeddings, model.project_embeddings, model.beta,
-                                             model.other_project_importance, model.default_lambda).fit(data)
+        model_application = model.get_applicable()
         return_time = return_time_mae(model_application, eval, samples_num=10)
         print("return_time:", return_time)
         print()
@@ -228,10 +231,8 @@ def train(data, eval, dim, beta, other_project_importance, learning_rate, iter_n
         model = Model2Lambda(data, dim, learning_rate=learning_rate, eps=1, beta=beta,
                              other_project_importance=other_project_importance)
 
-    model_application = ModelApplication(model.user_embeddings, model.project_embeddings, model.beta,
-                                         model.other_project_importance, model.default_lambda).fit(data)
     print("start ll = {}, return_time = {}".format(model.log_likelihood(),
-                                                   return_time_mae(model_application, eval, samples_num=10)))
+                                                   return_time_mae(model.get_applicable(), eval, samples_num=10)))
     if optimization_type == "glove":
         model.glove_like_optimisation(iter_num=iter_num, verbose=True, eval=eval)
     elif optimization_type == "sgd":
@@ -250,8 +251,7 @@ def train(data, eval, dim, beta, other_project_importance, learning_rate, iter_n
     except FileNotFoundError:
         print('Model saving failed')
 
-    model_application = ModelApplication(model.user_embeddings, model.project_embeddings, beta,
-                                         other_project_importance, model.default_lambda).fit(data)
+    model_application = model.get_applicable()
     return model_application
 
 
@@ -326,7 +326,7 @@ def lastfm_test():
     learning_rate = 0.0003
     optimization_type = "mix"
     iter_num = 10
-    size = 1 * 2000 * 1000
+    size = 1 * 1000 * 1000
     samples_num = 10
     train_ratio = 0.75
     users_num = 1000
@@ -342,10 +342,65 @@ def lastfm_test():
                    optimization_type, model_filename, load=load)
 
 
+def prepare_lastfm_data(filename, size=50000, train_ratio=0.75):
+    raw_data = lastfm_read_raw_data(filename, size)
+    X = lastfm_prepare_data(raw_data)
+    return train_test_split(X, train_ratio)
+
+
+def main_eval(arguments):
+    samples_num = 10
+    with open(arguments.model_filename, 'rb') as model_file:
+        model = pickle.load(model_file)
+    if arguments.data_type == 'lastfm':
+        _, data = prepare_lastfm_data(arguments.data_path)
+    else:
+        data = None
+    return_time = return_time_mae(model.get_application(), data, samples_num=samples_num)
+    print("return_time:", return_time)
+
+
+def main_train(arguments):
+    if arguments.data_type == 'lastfm':
+        x_train, x_test = prepare_lastfm_data(arguments.data_path)
+        train(x_train, x_test, dim=5, beta=0.001, other_project_importance=0.1, learning_rate=0.001, iter_num=20,
+              optimization_type='glove', model_filename=arguments.model_path)
+    else:
+        raise NotImplementedError()
+
+
+def main_test(arguments):
+    if arguments.data_type == 'lastfm':
+        lastfm_test()
+    else:
+        toloka_test()
+
+
 if __name__ == "__main__":
     np.random.seed(3)
     random.seed(3)
+    argument_parser = argparse.ArgumentParser()
+    subparsers = argument_parser.add_subparsers()
+
+    eval_parser = subparsers.add_parser('eval')
+    eval_parser.set_defaults(func=main_eval)
+
+    train_parser = subparsers.add_parser('train')
+    eval_parser.set_defaults(func=main_train)
+
+    test_parser = subparsers.add_parser('test')
+    test_parser.set_defaults()
+
+    argument_parser.add_argument('data_type')
+    argument_parser.add_argument('data_path')
+    argument_parser.add_argument('model_path')
+
+    args = argument_parser.parse_args()
+    print(args)
+    exit(0)
+
     start_time = time.time()
     # toloka_test()
-    lastfm_test()
+    # lastfm_test()
+    args.func()
     print("time:", time.time() - start_time)
