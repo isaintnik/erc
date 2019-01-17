@@ -386,21 +386,19 @@ if __name__ == "__main__":
     eval_parser.set_defaults(func=main_eval)
 
     train_parser = subparsers.add_parser('train')
-    eval_parser.set_defaults(func=main_train)
+    train_parser.set_defaults(func=main_train)
 
     test_parser = subparsers.add_parser('test')
-    test_parser.set_defaults()
+    test_parser.set_defaults(func=main_test)
 
     argument_parser.add_argument('data_type')
     argument_parser.add_argument('data_path')
     argument_parser.add_argument('model_path')
 
     args = argument_parser.parse_args()
-    print(args)
-    exit(0)
 
     start_time = time.time()
     # toloka_test()
     # lastfm_test()
-    args.func()
+    args.func(args)
     print("time:", time.time() - start_time)
