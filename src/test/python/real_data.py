@@ -1,17 +1,17 @@
-import time
-import math
-import random
-import pickle
 import argparse
+import math
+import pickle
+import random
+import time
+
 import numpy as np
 import pandas as pd
+
 from src.main.python.model import USession, Model2Lambda
 
-
-# filenames
 TOLOKA_FILENAME = "/Users/akhvorov/data/mlimlab/erc/datasets/sessions_2018_10_01_2018_10_02"
-LASTFM_FILENAME = "/Users/akhvorov/data/mlimlab/erc/datasets/lastfm-dataset-1K/" \
-                  "userid-timestamp-artid-artname-traid-traname_1M.tsv"
+LASTFM_FILENAME = "~/Documents/csc/csc_repo/practice/TRC/erc/lastfm-dataset-1K/" \
+                  "userid-timestamp-artid-artname-traid-traname.tsv"
 
 
 # toloka
@@ -59,7 +59,7 @@ def toloka_prepare_data(data):
 #                              "userid-timestamp-artid-artname-traid-traname_100000.tsv", sep='\t')
 
 def lastfm_read_raw_data(filename, size=None):
-    raw_data = pd.read_csv(filename, sep='\t').values
+    raw_data = pd.read_csv(filename, sep='\t', error_bad_lines=False).values
     return raw_data if size is None else raw_data[:size]
 
 
@@ -269,6 +269,28 @@ def return_time_mae(model, data, samples_num=10):
     return errors / count
 
 
+def item_recommendation_mae(model, data):
+    errors = 0.
+    count = 0
+    for user_id, user_history in data.items():
+
+        user_lambdas = model.user_lambdas[user_id]
+
+        for i, session in enumerate(user_history):
+            if session.n_tasks > 0:
+                count += 1
+                observed_next_pid = session.pid
+
+                project_lambdas = [(user_lambdas.get(pid), pid)
+                                   for pid in range(len(model.project_embeddings))]
+
+                sorted_pids = [pid for l, pid in sorted(project_lambdas, reverse=True)]
+                errors += sorted_pids.index(observed_next_pid)
+
+            model.accept(user_id, session)
+    return errors / count
+
+
 def where_fails(model, data, samples_num=10):
     session_predictions = []
     zero_pr_delta = 0
@@ -379,26 +401,26 @@ def main_test(arguments):
 if __name__ == "__main__":
     np.random.seed(3)
     random.seed(3)
-    argument_parser = argparse.ArgumentParser()
-    subparsers = argument_parser.add_subparsers()
-
-    eval_parser = subparsers.add_parser('eval')
-    eval_parser.set_defaults(func=main_eval)
-
-    train_parser = subparsers.add_parser('train')
-    train_parser.set_defaults(func=main_train)
-
-    test_parser = subparsers.add_parser('test')
-    test_parser.set_defaults(func=main_test)
-
-    argument_parser.add_argument('data_type')
-    argument_parser.add_argument('data_path')
-    argument_parser.add_argument('model_path')
-
-    args = argument_parser.parse_args()
-
+    # argument_parser = argparse.ArgumentParser()
+    # subparsers = argument_parser.add_subparsers()
+    #
+    # eval_parser = subparsers.add_parser('eval')
+    # eval_parser.set_defaults(func=main_eval)
+    #
+    # train_parser = subparsers.add_parser('train')
+    # train_parser.set_defaults(func=main_train)
+    #
+    # test_parser = subparsers.add_parser('test')
+    # test_parser.set_defaults(func=main_test)
+    #
+    # argument_parser.add_argument('data_type')
+    # argument_parser.add_argument('data_path')
+    # argument_parser.add_argument('model_path')
+    #
+    # args = argument_parser.parse_args()
+    #
     start_time = time.time()
     # toloka_test()
-    # lastfm_test()
-    args.func(args)
+    lastfm_test()
+    # args.func(args)
     print("time:", time.time() - start_time)
