@@ -10,7 +10,7 @@ import pandas as pd
 from src.main.python.model import USession, Model2Lambda
 
 TOLOKA_FILENAME = "/Users/akhvorov/data/mlimlab/erc/datasets/sessions_2018_10_01_2018_10_02"
-LASTFM_FILENAME = "~/Documents/csc/csc_repo/practice/TRC/erc/lastfm-dataset-1K/" \
+LASTFM_FILENAME = "/Users/akhvorov/data/mlimlab/erc/lastfm-dataset-1K/" \
                   "userid-timestamp-artid-artname-traid-traname.tsv"
 
 
@@ -401,26 +401,26 @@ def main_test(arguments):
 if __name__ == "__main__":
     np.random.seed(3)
     random.seed(3)
-    # argument_parser = argparse.ArgumentParser()
-    # subparsers = argument_parser.add_subparsers()
-    #
-    # eval_parser = subparsers.add_parser('eval')
-    # eval_parser.set_defaults(func=main_eval)
-    #
-    # train_parser = subparsers.add_parser('train')
-    # train_parser.set_defaults(func=main_train)
-    #
-    # test_parser = subparsers.add_parser('test')
-    # test_parser.set_defaults(func=main_test)
-    #
-    # argument_parser.add_argument('data_type')
-    # argument_parser.add_argument('data_path')
-    # argument_parser.add_argument('model_path')
-    #
-    # args = argument_parser.parse_args()
-    #
+    argument_parser = argparse.ArgumentParser()
+    subparsers = argument_parser.add_subparsers()
+
+    eval_parser = subparsers.add_parser('eval')
+    eval_parser.set_defaults(func=main_eval)
+
+    train_parser = subparsers.add_parser('train')
+    train_parser.set_defaults(func=main_train)
+
+    test_parser = subparsers.add_parser('test')
+    test_parser.set_defaults(func=main_test)
+
+    argument_parser.add_argument('data_type')
+    argument_parser.add_argument('data_path')
+    argument_parser.add_argument('model_path')
+
+    args = argument_parser.parse_args()
+
     start_time = time.time()
     # toloka_test()
     lastfm_test()
-    # args.func(args)
+    args.func(args)
     print("time:", time.time() - start_time)
