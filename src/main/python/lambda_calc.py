@@ -131,7 +131,8 @@ class UserLambda:
         self.last_project_derivative_numerator = {}
 
     def update(self, project_embedding, session, delta_time):
-        e = np.exp(-self.beta) if delta_time >= 0 else 1.  # * delta_time)
+        # delta_time is None when user get first project
+        e = np.exp(-self.beta) if delta_time is not None and delta_time >= 0 else 1.  # * delta_time)
         ua = self.interactions_supplier(session.pid)
         if session.pid not in self.projects_to_ind:
             self.projects_to_ind[session.pid] = len(self.projects_to_ind)
@@ -208,6 +209,68 @@ class UserLambda:
                    self.last_user_derivative_numerator / (
                            self.denominator + self.num_denom_by_project[self.projects_to_ind[project_id]][1]) / self.avg_time_between_sessions, \
                    project_derivatives
+
+
+class UserProjectLambdaManager:
+    def __init__(self, user_embeddings, project_embeddings, beta, other_project_importance, default_lambda,
+                 lambda_confidence, derivative, square):
+        interaction_calculator = LazyInteractionsCalculator(user_embeddings, project_embeddings)
+        self.user_lambdas = {user_id: UserLambda(user_embeddings[user_id], beta, other_project_importance,
+                                            interaction_calculator.get_user_supplier(user_id),
+                                            default_lambda=default_lambda,
+                                            lambda_confidence=lambda_confidence,
+                                            derivative=derivative, square=square)
+                             for user_id in user_embeddings.keys()}
+        # lambdas_by_project = {user_id: {pid: 0 for pid in project_embeddings.keys()} for user_id in user_embeddings.keys()}
+        self.prev_user_action_time = {}
+        self.project_embeddings = project_embeddings
+
+    def get(self, user_id, project_id):
+        raise NotImplementedError()
+
+    def accept(self, user_id, session):
+        raise NotImplementedError()
+
+
+class UserProjectLambdaManagerLookAhead(UserProjectLambdaManager):
+    def __init__(self, user_embeddings, project_embeddings, beta, other_project_importance, default_lambda,
+                 lambda_confidence, derivative, square):
+        super().__init__(user_embeddings, project_embeddings, beta, other_project_importance, default_lambda,
+                         lambda_confidence, derivative, square)
+
+    def get(self, user_id, project_id):
+        return self.user_lambdas[user_id].get(project_id)
+
+    def accept(self, user_id, session):
+        if user_id not in self.prev_user_action_time:
+            # it's wrong, we can update even if it's first item of user
+            # if default lambda = u^T \cdot i, we get different lambdas for unseen projects
+            self.prev_user_action_time[user_id] = session.start_ts
+        else:
+            self.user_lambdas[user_id].update(self.project_embeddings[session.pid], session,
+                                              session.start_ts - self.prev_user_action_time[user_id])
+
+
+class UserProjectLambdaManagerNotLookAhead(UserProjectLambdaManager):
+    def __init__(self, user_embeddings, project_embeddings, beta, other_project_importance, default_lambda,
+                 lambda_confidence, derivative, square):
+        super().__init__(user_embeddings, project_embeddings, beta, other_project_importance, default_lambda,
+                         lambda_confidence, derivative, square)
+        self.saved_lambdas_by_project = {user_id: {pid: -1 for pid in project_embeddings.keys()} for user_id in
+                                   user_embeddings.keys()}
+
+    def get(self, user_id, project_id):
+        assert self.saved_lambdas_by_project[user_id][project_id] != -1
+        return self.saved_lambdas_by_project[user_id][project_id]
+
+    def accept(self, user_id, session):
+        if user_id not in self.prev_user_action_time:
+            self.prev_user_action_time[user_id] = session.start_ts
+        else:
+            self.user_lambdas[user_id].update(self.project_embeddings[session.pid], session,
+                                              session.start_ts - self.prev_user_action_time[user_id])
+            self.saved_lambdas_by_project[user_id][session.pid] = self.user_lambdas[user_id].get(session.pid)
+
 
 
 def projects_index(history):

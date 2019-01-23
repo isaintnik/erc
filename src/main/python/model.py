@@ -2,8 +2,10 @@ import math
 import warnings
 
 from collections import namedtuple
+import numpy as np
 
-from src.main.python.lambda_calc import *
+from src.main.python.lambda_calc import UserLambda, LazyInteractionsCalculator, SimpleInteractionsCalculator,\
+    UserProjectLambdaManagerLookAhead
 from src.test.python.metrics import return_time_mae, item_recommendation_mae
 
 
@@ -14,6 +16,15 @@ def print_metrics(model_application, X_te, samples_num=10):
     return_time = return_time_mae(model_application, X_te, samples_num=samples_num)
     recommend_mae = item_recommendation_mae(model_application, X_te)
     print("return_time = {}, recommendation_mae = {}".format(return_time, recommend_mae))
+
+
+def sort_data_by_time(users_history):
+    events = []
+    for user_id, user_history in users_history.items():
+        for session in user_history:
+            events.append((user_id, session))
+    return sorted(events, key=lambda x: x[1].start_ts)
+
 
 
 class Model:
@@ -69,52 +80,44 @@ class Model:
         ll = 0.
         users_derivatives = {k: np.zeros_like(v) for k, v in self.user_embeddings.items()}
         project_derivatives = {k: np.zeros_like(v) for k, v in self.project_embeddings.items()}
-        interaction_calculator = LazyInteractionsCalculator(self.user_embeddings, self.project_embeddings)
-        for user_id, user_history in self.users_histories.items():
-            user_lambda = UserLambda(self.user_embeddings[user_id], self.beta, self.other_project_importance,
-                                     interaction_calculator.get_user_supplier(user_id),
-                                     default_lambda=self.default_lambda, lambda_confidence=self.lambda_confidence,
-                                     derivative=derivative, square=self.square)
-            lambdas_by_project = {}
-            done_projects = set()
-            last_times_sessions = set()
-            for i, user_session in enumerate(user_history):
-                # first time done projects tasks, skip ll update
-                if user_session.pid not in done_projects:
-                    done_projects.add(user_session.pid)
-                    user_lambda.update(self.project_embeddings[user_session.pid], user_session,
-                                       user_session.start_ts - user_history[i - 1].start_ts)
-                    lambdas_by_project[user_session.pid] = user_lambda.get(user_session.pid)
-                    continue
+        lambdas_by_project = UserProjectLambdaManagerLookAhead(self.user_embeddings, self.project_embeddings,
+                                                               self.beta, self.other_project_importance,
+                                                               self.default_lambda, self.lambda_confidence,
+                                                               derivative, self.square)
+        done_projects = set()
+        last_times_sessions = set()
 
-                if user_session.n_tasks != 0:
-                    if derivative:
-                        self._update_session_derivative(user_session, user_id, lambdas_by_project, users_derivatives,
-                                                        project_derivatives)
-                    else:
-                        ll += self._session_likelihood(user_session, lambdas_by_project)
-                    user_lambda.update(self.project_embeddings[user_session.pid], user_session,
-                                       user_session.start_ts - user_history[i - 1].start_ts)
-                    lambdas_by_project[user_session.pid] = user_lambda.get(user_session.pid)
-                else:
-                    last_times_sessions.add(user_session)
+        events = sort_data_by_time(self.users_histories)
+        for user_id, session in events:
+            # first time done projects tasks, skip ll update
+            # i forget why we do like this
+            if session.pid not in done_projects:
+                done_projects.add(session.pid)
+                lambdas_by_project.accept(user_id, session)
+                continue
 
-            for user_session in last_times_sessions:
+            if session.n_tasks != 0:
                 if derivative:
-                    self._update_last_derivative(user_session, user_id, lambdas_by_project, users_derivatives,
-                                                 project_derivatives)
+                    self._update_session_derivative(user_id, session, lambdas_by_project, users_derivatives,
+                                                    project_derivatives)
                 else:
-                    ll += self._last_likelihood(user_session, lambdas_by_project)
-            # if not derivative:
-            #     print({s.pid: user_lambda.project_lambdas[s.pid].get() for s in last_times_sessions})
+                    ll += self._session_likelihood(user_id, session, lambdas_by_project)
+                lambdas_by_project.accept(user_id, session)
+            else:
+                last_times_sessions.add((user_id, session))
+
+        for user_id, session in last_times_sessions:
+            if derivative:
+                self._update_last_derivative(user_id, session, lambdas_by_project, users_derivatives,
+                                             project_derivatives)
+            else:
+                ll += self._last_likelihood(user_id, session, lambdas_by_project)
         if derivative:
-            # if math.isnan(users_derivatives[0][0]) or math.isnan(project_derivatives[0][0]):
-            #     print(users_derivatives)
             return users_derivatives, project_derivatives
         return ll
 
     def glove_like_optimisation(self, iter_num=30, verbose=False, eval=None):
-        lr = self.learning_rate  # / self.data_size
+        lr = self.learning_rate
         self.learning_rate *= self.decay_rate
         discount_decay = 0.99
         # we should check, that python change embeddings everywhere while optimizing
@@ -185,16 +188,16 @@ class Model:
                     print_metrics(self.get_applicable(), eval, samples_num=10)
                 print()
 
-    def _session_likelihood(self, user_session, lambdas_by_project):
+    def _session_likelihood(self, user_id, user_session, lambdas_by_project):
         raise NotImplementedError()
 
-    def _last_likelihood(self, user_session, lambdas_by_project):
+    def _last_likelihood(self, user_id, user_session, lambdas_by_project):
         raise NotImplementedError()
 
-    def _update_session_derivative(self, user_session, user_id, lambdas_by_project, users_derivatives, project_derivatives):
+    def _update_session_derivative(self, user_id, user_session, lambdas_by_project, users_derivatives, project_derivatives):
         raise NotImplementedError()
 
-    def _update_last_derivative(self, user_session, user_id, lambdas_by_project, users_derivatives, project_derivatives):
+    def _update_last_derivative(self, user_id, user_session, lambdas_by_project, users_derivatives, project_derivatives):
         raise NotImplementedError()
 
     def get_applicable(self):
@@ -218,12 +221,12 @@ class Model2UA(Model):
         Model.__init__(self, users_histories, dim, learning_rate, beta, eps, other_project_importance,
                        users_embeddings_prior, projects_embeddings_prior, square = True)
 
-    def _session_likelihood(self, user_session, user_lambda):
+    def _session_likelihood(self, user_id, user_session, user_lambda):
         cur_lambda = user_lambda.get(user_session.pid)
         return np.log(-np.exp(-cur_lambda * (user_session.pr_delta + self.eps)) +
                       np.exp(-cur_lambda * (user_session.pr_delta - self.eps)))
 
-    def _last_likelihood(self, user_session, user_lambda):
+    def _last_likelihood(self, user_id, user_session, user_lambda):
         return -user_lambda.get(user_session.pid) * user_session.pr_delta
 
     def _update_session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
@@ -247,16 +250,9 @@ class Model2Lambda(Model):
         Model.__init__(self, users_histories, dim, learning_rate, beta, eps, other_project_importance,
                        users_embeddings_prior, projects_embeddings_prior, square=False)
 
-    def _session_likelihood(self, user_session, lambdas_by_project):
-        # cur_lambda2 = user_lambda.get(user_session.pid) ** 2
-        cur_lambda2 = lambdas_by_project[user_session.pid] ** 2
-        # if math.isnan(cur_lambda2):
-        #     print("Is None")
-        # val = -np.exp(-cur_lambda2 * (user_session.pr_delta + self.eps)) + np.exp(
-        #     -cur_lambda2 * max(0, user_session.pr_delta - self.eps))
-        # if not (0 <= val <= 1):
-        #     print(val)
-        #     assert 0 <= val <= 1
+    def _session_likelihood(self, user_id, user_session, lambdas_by_project):
+        cur_lambda2 = lambdas_by_project.get(user_id, user_session.pid) ** 2
+        # cur_lambda2 = lambdas_by_project[user_session.pid] ** 2
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             ans = np.log(-np.exp(-cur_lambda2 * (user_session.pr_delta + self.eps)) +
@@ -266,13 +262,13 @@ class Model2Lambda(Model):
                 warnings.warn("in ll", RuntimeWarning)
         return ans
 
-    def _last_likelihood(self, user_session, lambdas_by_project):
-        # return -(user_lambda.get(user_session.pid) ** 2) * user_session.pr_delta
-        return -(lambdas_by_project[user_session.pid] ** 2) * user_session.pr_delta
+    def _last_likelihood(self, user_id, user_session, lambdas_by_project):
+        return -(lambdas_by_project.get(user_id, user_session.pid) ** 2) * user_session.pr_delta
+        # return -(lambdas_by_project[user_session.pid] ** 2) * user_session.pr_delta
 
-    def _update_session_derivative(self, user_session, user_id, lambdas_by_project, users_derivatives, project_derivatives):
-        # lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid)
-        lam, lam_user_d, lam_projects_d = lambdas_by_project[user_session.pid]
+    def _update_session_derivative(self, user_id, user_session, lambdas_by_project, users_derivatives, project_derivatives):
+        lam, lam_user_d, lam_projects_d = lambdas_by_project.get(user_id, user_session.pid)
+        # lam, lam_user_d, lam_projects_d = lambdas_by_project[user_session.pid]
         lam2 = lam ** 2
         tau = user_session.pr_delta
         exp_plus = np.exp(-lam2 * (tau + self.eps))
@@ -297,9 +293,9 @@ class Model2Lambda(Model):
         # if math.isnan(users_derivatives[0][0]) or math.isnan(project_derivatives[0][0]):
         #    print(users_derivatives)
 
-    def _update_last_derivative(self, user_session, user_id, lambdas_by_project, users_derivatives, project_derivatives):
-        # lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid)
-        lam, lam_user_d, lam_projects_d = lambdas_by_project[user_session.pid]
+    def _update_last_derivative(self, user_id, user_session, lambdas_by_project, users_derivatives, project_derivatives):
+        lam, lam_user_d, lam_projects_d = lambdas_by_project.get(user_id, user_session.pid)
+        # lam, lam_user_d, lam_projects_d = lambdas_by_project[user_session.pid]
         coeff = 2 * lam * user_session.pr_delta
         users_derivatives[user_id] -= coeff * lam_user_d
         # so slow
@@ -314,7 +310,7 @@ class ModelExpLambda(Model):
                        users_embeddings_prior, projects_embeddings_prior, square = False)
         self.square = False
 
-    def _session_likelihood(self, user_session, user_lambda):
+    def _session_likelihood(self, user_id, user_session, user_lambda):
         exp_lambda = np.exp(user_lambda.get(user_session.pid))
         if math.isnan(exp_lambda):
             print("Is None")
@@ -326,7 +322,7 @@ class ModelExpLambda(Model):
         return np.log(-np.exp(-exp_lambda * (user_session.pr_delta + self.eps)) +
                       np.exp(-exp_lambda * max(0, user_session.pr_delta - self.eps)))
 
-    def _last_likelihood(self, user_session, user_lambda):
+    def _last_likelihood(self, user_id, user_session, user_lambda):
         return -(np.exp(user_lambda.get(user_session.pid))) * user_session.pr_delta
 
     def _update_session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
@@ -388,7 +384,7 @@ class ApplicableModel:
         return np.mean(np.random.exponential(scale=1 / lam, size=size))
 
     def fit(self, users_history):
-        for user_id, user_history in users_history.items():
-            for session in user_history:
-                self.accept(user_id, session)
+        events = sort_data_by_time(users_history)
+        for user_id, session in events:
+            self.accept(user_id, session)
         return self
