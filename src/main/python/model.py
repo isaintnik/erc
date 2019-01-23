@@ -1,24 +1,19 @@
 import math
 import warnings
+
 from collections import namedtuple
+
 from src.main.python.lambda_calc import *
-
-
-def return_time_mae(model, data, samples_num=10):
-    errors = 0.
-    count = 0
-    for user_id, user_history in data.items():
-        for i, session in enumerate(user_history):
-            if i > 0 and session.pr_delta is not None and not math.isnan(session.pr_delta):
-                count += 1
-                expected_return_time = model.time_delta(user_id, session.pid, samples_num)
-                # expected_return_time = 0
-                errors += abs(expected_return_time - session.pr_delta)
-            model.accept(user_id, session)
-    return errors / count
+from src.test.python.metrics import return_time_mae, item_recommendation_mae
 
 
 USession = namedtuple('USession', 'pid start_ts end_ts pr_delta n_tasks')
+
+
+def print_metrics(model_application, X_te, samples_num=10):
+    return_time = return_time_mae(model_application, X_te, samples_num=samples_num)
+    recommend_mae = item_recommendation_mae(model_application, X_te)
+    print("return_time = {}, recommendation_mae = {}".format(return_time, recommend_mae))
 
 
 class Model:
@@ -27,7 +22,7 @@ class Model:
         self.users_histories = users_histories
         self.emb_dim = dim
         self.learning_rate = learning_rate
-        self.decay_rate = 0.95
+        self.decay_rate = 1  # 0.95
         self.beta = beta
         self.eps = eps
         self.square = square
@@ -123,9 +118,9 @@ class Model:
         self.learning_rate *= self.decay_rate
         discount_decay = 0.99
         # we should check, that python change embeddings everywhere while optimizing
-        users_diffs_squares = {k: np.ones_like(v) * 1e-1 for k, v in self.user_embeddings.items()}
+        users_diffs_squares = {k: np.ones_like(v) * 1 for k, v in self.user_embeddings.items()}
         # users_diffs_squares = np.ones(self.user_embeddings.shape)  # * 1e-5
-        projects_diffs_squares = {k: np.ones_like(v) * 1e-1 for k, v in self.project_embeddings.items()}
+        projects_diffs_squares = {k: np.ones_like(v) * 1 for k, v in self.project_embeddings.items()}
         # projects_diffs_squares = np.ones(self.project_embeddings.shape)  # * 1e-5
         interaction_calculator = SimpleInteractionsCalculator(self.user_embeddings, self.project_embeddings)
         for optimization_iter in range(iter_num):
@@ -187,9 +182,7 @@ class Model:
             if verbose:  # and (optimization_iter % 5 == 0 or optimization_iter in [1, 2]):
                 print("{}-th iter, ll = {}".format(optimization_iter, self.log_likelihood()))
                 if eval is not None:
-                    model_application = self.get_applicable()
-                    return_time = return_time_mae(model_application, eval, samples_num=10)
-                    print("return_time:", return_time)
+                    print_metrics(self.get_applicable(), eval, samples_num=10)
                 print()
 
     def _session_likelihood(self, user_session, lambdas_by_project):
@@ -211,8 +204,6 @@ class Model:
 
     def optimization_step(self):
         users_derivatives, project_derivatives = self.ll_derivative()
-        # if math.isnan(users_derivatives[0][0]):
-        #     print(users_derivatives)
         lr = self.learning_rate / self.data_size
         for user_id in self.user_embeddings:
             self.user_embeddings[user_id] += users_derivatives[user_id] * lr

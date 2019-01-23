@@ -1,5 +1,5 @@
 from collections import namedtuple
-from src.main.python.preprocess_data import process_data_stream
+from src.main.python.data_preprocess.yt_toloka_data import process_data_stream
 
 
 Row = namedtuple('Row', 'project_id timestamp next_ts action_type')
