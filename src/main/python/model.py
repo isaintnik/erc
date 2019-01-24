@@ -26,11 +26,11 @@ def sort_data_by_time(users_history):
     return sorted(events, key=lambda x: x[1].start_ts)
 
 
-
 class Model:
     def __init__(self, users_histories, dim, learning_rate=0.003, beta=0.001, eps=3600, other_project_importance=0.3,
                  users_embeddings_prior=None, projects_embeddings_prior=None, square=False):
         self.users_histories = users_histories
+        self.events = sort_data_by_time(users_histories)
         self.emb_dim = dim
         self.learning_rate = learning_rate
         self.decay_rate = 1  # 0.95
@@ -80,15 +80,13 @@ class Model:
         ll = 0.
         users_derivatives = {k: np.zeros_like(v) for k, v in self.user_embeddings.items()}
         project_derivatives = {k: np.zeros_like(v) for k, v in self.project_embeddings.items()}
-        lambdas_by_project = UserProjectLambdaManagerLookAhead(self.user_embeddings, self.project_embeddings,
-                                                               self.beta, self.other_project_importance,
-                                                               self.default_lambda, self.lambda_confidence,
-                                                               derivative, self.square)
         done_projects = set()
         last_times_sessions = set()
-
-        events = sort_data_by_time(self.users_histories)
-        for user_id, session in events:
+        lambdas_by_project = UserProjectLambdaManagerLookAhead(
+            self.user_embeddings, self.project_embeddings, self.beta, self.other_project_importance,
+            self.default_lambda, self.lambda_confidence, derivative, self.square
+        )
+        for user_id, session in self.events:
             # first time done projects tasks, skip ll update
             # i forget why we do like this
             if session.pid not in done_projects:

@@ -13,7 +13,7 @@ from src.test.python.metrics import return_time_mae, item_recommendation_mae
 
 TOLOKA_FILENAME = "~/data/mlimlab/erc/datasets/sessions_2018_10_01_2018_10_02"
 LASTFM_FILENAME = "~/data/mlimlab/erc/datasets/lastfm-dataset-1K/" \
-                  "userid-timestamp-artid-artname-traid-traname_100000.tsv"
+                  "userid-timestamp-artid-artname-traid-traname_1M.tsv"
 
 
 def sgd_optimization(model, eval, iter_num):
@@ -41,10 +41,9 @@ def train(model, data, eval, dim, beta, other_project_importance, learning_rate,
         model = Model2Lambda(data, dim, learning_rate=learning_rate, eps=1, beta=beta,
                              other_project_importance=other_project_importance)
 
-    print("start ll = {}, return_time = {}, recommendation_mae = {}".format(
+    print("start ll = {}, return_time = {}".format(
         model.log_likelihood(),
-        return_time_mae(model.get_applicable(), eval, samples_num=10),
-        item_recommendation_mae(model.get_applicable(), data))
+        return_time_mae(model.get_applicable(), eval, samples_num=10))
     )
     if optimization_type == "glove":
         model.glove_like_optimisation(iter_num=iter_num, verbose=True, eval=eval)
@@ -107,7 +106,7 @@ def lastfm_test():
     dim = 15
     beta = 0.001
     other_project_importance = 0.1
-    learning_rate = 0.0001
+    learning_rate = 0.0003
     iter_num = 1
     size = 1 * 1000 * 1000
     samples_num = 10
@@ -127,10 +126,10 @@ def lastfm_test():
     X_tr, X_te = train_test_split(X, train_ratio)
     model = None
 
-    model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate, iter_num=1,
+    model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate, iter_num=2,
                   optimization_type="glove", model_path_in=model_path_in, model_path_out=model_path_out)
 
-    model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate=15*learning_rate, iter_num=1,
+    model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate=15*learning_rate, iter_num=2,
                   optimization_type="sgd", model_path_in=model_path_in, model_path_out=model_path_out)
 
     print_metrics(model.get_applicable(), X_te, samples_num=samples_num)

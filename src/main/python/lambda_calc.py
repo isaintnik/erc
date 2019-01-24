@@ -1,6 +1,5 @@
 import numpy as np
 
-
 DEFAULT_FOREIGN_COEFFICIENT = .3
 
 
@@ -60,7 +59,7 @@ class RowInteractionsCalculator(InteractionCalculator):
         self.projects_indexes = projects_indexes
         self.reversed_indexes = reversed_indexes
         self.interactions = {user_id: (self.user_embeddings[user_id]
-                                      @ self.project_embeddings[self.projects_indexes[user_id]].T)
+                                       @ self.project_embeddings[self.projects_indexes[user_id]].T)
                              for user_id in self.user_embeddings}
 
     def get_interaction(self, user_id, project_id):
@@ -216,10 +215,10 @@ class UserProjectLambdaManager:
                  lambda_confidence, derivative, square):
         interaction_calculator = LazyInteractionsCalculator(user_embeddings, project_embeddings)
         self.user_lambdas = {user_id: UserLambda(user_embeddings[user_id], beta, other_project_importance,
-                                            interaction_calculator.get_user_supplier(user_id),
-                                            default_lambda=default_lambda,
-                                            lambda_confidence=lambda_confidence,
-                                            derivative=derivative, square=square)
+                                                 interaction_calculator.get_user_supplier(user_id),
+                                                 default_lambda=default_lambda,
+                                                 lambda_confidence=lambda_confidence,
+                                                 derivative=derivative, square=square)
                              for user_id in user_embeddings.keys()}
         # lambdas_by_project = {user_id: {pid: 0 for pid in project_embeddings.keys()} for user_id in user_embeddings.keys()}
         self.prev_user_action_time = {}
@@ -257,7 +256,7 @@ class UserProjectLambdaManagerNotLookAhead(UserProjectLambdaManager):
         super().__init__(user_embeddings, project_embeddings, beta, other_project_importance, default_lambda,
                          lambda_confidence, derivative, square)
         self.saved_lambdas_by_project = {user_id: {pid: -1 for pid in project_embeddings.keys()} for user_id in
-                                   user_embeddings.keys()}
+                                         user_embeddings.keys()}
 
     def get(self, user_id, project_id):
         assert self.saved_lambdas_by_project[user_id][project_id] != -1
@@ -270,7 +269,6 @@ class UserProjectLambdaManagerNotLookAhead(UserProjectLambdaManager):
             self.user_lambdas[user_id].update(self.project_embeddings[session.pid], session,
                                               session.start_ts - self.prev_user_action_time[user_id])
             self.saved_lambdas_by_project[user_id][session.pid] = self.user_lambdas[user_id].get(session.pid)
-
 
 
 def projects_index(history):
