@@ -211,9 +211,8 @@ class UserLambda:
 
 
 class UserProjectLambdaManager:
-    def __init__(self, user_embeddings, project_embeddings, beta, other_project_importance, default_lambda,
-                 lambda_confidence, derivative, square):
-        interaction_calculator = LazyInteractionsCalculator(user_embeddings, project_embeddings)
+    def __init__(self, user_embeddings, project_embeddings, interaction_calculator, beta, other_project_importance, default_lambda,
+                 lambda_confidence, derivative, accum=True, square=False):
         self.user_lambdas = {user_id: UserLambda(user_embeddings[user_id], beta, other_project_importance,
                                                  interaction_calculator.get_user_supplier(user_id),
                                                  default_lambda=default_lambda,
@@ -223,6 +222,7 @@ class UserProjectLambdaManager:
         # lambdas_by_project = {user_id: {pid: 0 for pid in project_embeddings.keys()} for user_id in user_embeddings.keys()}
         self.prev_user_action_time = {}
         self.project_embeddings = project_embeddings
+        self.accum = accum
 
     def get(self, user_id, project_id):
         raise NotImplementedError()
@@ -232,13 +232,13 @@ class UserProjectLambdaManager:
 
 
 class UserProjectLambdaManagerLookAhead(UserProjectLambdaManager):
-    def __init__(self, user_embeddings, project_embeddings, beta, other_project_importance, default_lambda,
-                 lambda_confidence, derivative, square):
-        super().__init__(user_embeddings, project_embeddings, beta, other_project_importance, default_lambda,
-                         lambda_confidence, derivative, square)
+    def __init__(self, user_embeddings, project_embeddings, interaction_calculator, beta, other_project_importance, default_lambda,
+                 lambda_confidence, derivative, accum, square):
+        super().__init__(user_embeddings, project_embeddings, interaction_calculator, beta, other_project_importance, default_lambda,
+                         lambda_confidence, derivative, accum, square)
 
     def get(self, user_id, project_id):
-        return self.user_lambdas[user_id].get(project_id)
+        return self.user_lambdas[user_id].get(project_id, accum=self.accum)
 
     def accept(self, user_id, session):
         if user_id not in self.prev_user_action_time:
@@ -251,10 +251,10 @@ class UserProjectLambdaManagerLookAhead(UserProjectLambdaManager):
 
 
 class UserProjectLambdaManagerNotLookAhead(UserProjectLambdaManager):
-    def __init__(self, user_embeddings, project_embeddings, beta, other_project_importance, default_lambda,
-                 lambda_confidence, derivative, square):
-        super().__init__(user_embeddings, project_embeddings, beta, other_project_importance, default_lambda,
-                         lambda_confidence, derivative, square)
+    def __init__(self, user_embeddings, project_embeddings, interaction_calculator, beta, other_project_importance, default_lambda,
+                 lambda_confidence, derivative, accum=True, square=False):
+        super().__init__(user_embeddings, project_embeddings, interaction_calculator, beta, other_project_importance, default_lambda,
+                         lambda_confidence, derivative, accum, square)
         self.saved_lambdas_by_project = {user_id: {pid: -1 for pid in project_embeddings.keys()} for user_id in
                                          user_embeddings.keys()}
 
@@ -268,7 +268,7 @@ class UserProjectLambdaManagerNotLookAhead(UserProjectLambdaManager):
         else:
             self.user_lambdas[user_id].update(self.project_embeddings[session.pid], session,
                                               session.start_ts - self.prev_user_action_time[user_id])
-            self.saved_lambdas_by_project[user_id][session.pid] = self.user_lambdas[user_id].get(session.pid)
+            self.saved_lambdas_by_project[user_id][session.pid] = self.user_lambdas[user_id].get(session.pid, accum=self.accum)
 
 
 def projects_index(history):

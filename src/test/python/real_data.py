@@ -106,7 +106,7 @@ def lastfm_test():
     dim = 15
     beta = 0.001
     other_project_importance = 0.1
-    learning_rate = 0.0003
+    learning_rate = 0.0005
     iter_num = 1
     size = 1 * 1000 * 1000
     samples_num = 10
@@ -126,10 +126,10 @@ def lastfm_test():
     X_tr, X_te = train_test_split(X, train_ratio)
     model = None
 
-    model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate, iter_num=2,
+    model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate, iter_num=1,
                   optimization_type="glove", model_path_in=model_path_in, model_path_out=model_path_out)
 
-    model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate=15*learning_rate, iter_num=2,
+    model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate=15*learning_rate, iter_num=1,
                   optimization_type="sgd", model_path_in=model_path_in, model_path_out=model_path_out)
 
     print_metrics(model.get_applicable(), X_te, samples_num=samples_num)

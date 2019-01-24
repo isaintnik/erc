@@ -82,9 +82,10 @@ class Model:
         project_derivatives = {k: np.zeros_like(v) for k, v in self.project_embeddings.items()}
         done_projects = set()
         last_times_sessions = set()
+        interaction_calculator = LazyInteractionsCalculator(self.user_embeddings, self.project_embeddings)
         lambdas_by_project = UserProjectLambdaManagerLookAhead(
-            self.user_embeddings, self.project_embeddings, self.beta, self.other_project_importance,
-            self.default_lambda, self.lambda_confidence, derivative, self.square
+            self.user_embeddings, self.project_embeddings, interaction_calculator, self.beta, self.other_project_importance,
+            self.default_lambda, self.lambda_confidence, derivative, accum=True, square=self.square
         )
         for user_id, session in self.events:
             # first time done projects tasks, skip ll update
@@ -115,76 +116,76 @@ class Model:
         return ll
 
     def glove_like_optimisation(self, iter_num=30, verbose=False, eval=None):
-        lr = self.learning_rate
         self.learning_rate *= self.decay_rate
         discount_decay = 0.99
-        # we should check, that python change embeddings everywhere while optimizing
         users_diffs_squares = {k: np.ones_like(v) * 1 for k, v in self.user_embeddings.items()}
-        # users_diffs_squares = np.ones(self.user_embeddings.shape)  # * 1e-5
         projects_diffs_squares = {k: np.ones_like(v) * 1 for k, v in self.project_embeddings.items()}
-        # projects_diffs_squares = np.ones(self.project_embeddings.shape)  # * 1e-5
         interaction_calculator = SimpleInteractionsCalculator(self.user_embeddings, self.project_embeddings)
+        done_projects = set()
+        last_times_sessions = set()
+        lambdas_by_project = UserProjectLambdaManagerLookAhead(
+            self.user_embeddings, self.project_embeddings, interaction_calculator, self.beta, self.other_project_importance,
+            self.default_lambda, self.lambda_confidence, derivative=True, accum=False, square=True
+        )
         for optimization_iter in range(iter_num):
-            for user_id, user_history in self.users_histories.items():
-                user_lambda = UserLambda(self.user_embeddings[user_id], self.beta, self.other_project_importance,
-                                         interaction_calculator.get_user_supplier(user_id),
-                                         default_lambda=self.default_lambda, lambda_confidence=self.lambda_confidence,
-                                         derivative=True, square=self.square)
-                done_projects = set()
-                last_times_sessions = set()
-                lambdas_by_project = {}
-                for i, user_session in enumerate(user_history):
-                    # first time done projects tasks, skip ll update
-                    if user_session.pid not in done_projects:
-                        done_projects.add(user_session.pid)
-                        user_lambda.update(self.project_embeddings[user_session.pid], user_session,
-                                           user_session.start_ts - user_history[i - 1].start_ts)
-                        lambdas_by_project[user_session.pid] = user_lambda.get(user_session.pid, accum=False)
-                        continue
-
-                    if user_session.n_tasks != 0:
-                        # update in session
-                        lam, lam_user_d, lam_projects_d = lambdas_by_project[user_session.pid]
-                        # lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, accum=False)
-                        lam2 = lam ** 2
-                        tau = user_session.pr_delta
-                        exp_plus = np.exp(-lam2 * (tau + self.eps))
-                        exp_minus = np.exp(-lam2 * max(0, tau - self.eps))
-                        cur_ll_d = 2 * lam * ((tau + self.eps) * exp_plus - max(0, tau - self.eps) * exp_minus) / (
-                                -exp_plus + exp_minus)
-                        if math.isnan(cur_ll_d):
-                            cur_ll_d = 0.
-
-                        user_diff = cur_ll_d * lam_user_d
-                        users_diffs_squares[user_id] = discount_decay * users_diffs_squares[user_id] + user_diff * user_diff
-                        self.user_embeddings[user_id] += user_diff * lr / np.sqrt(users_diffs_squares[user_id])
-                        for project_id in lam_projects_d:
-                            project_diff = cur_ll_d * lam_projects_d[project_id]
-                            projects_diffs_squares[project_id] = discount_decay * projects_diffs_squares[project_id] + project_diff * project_diff
-                            self.project_embeddings[project_id] += project_diff * lr / np.sqrt(projects_diffs_squares[project_id])
-
-                        user_lambda.update(self.project_embeddings[user_session.pid], user_session,
-                                           user_session.start_ts - user_history[i - 1].start_ts)
-                        lambdas_by_project[user_session.pid] = user_lambda.get(user_session.pid, accum=False)
-                    else:
-                        last_times_sessions.add(user_session)
-
-                for user_session in last_times_sessions:
-                    # update in the end
-                    # lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, accum=False)
-                    lam, lam_user_d, lam_projects_d = lambdas_by_project[user_session.pid]
-                    user_diff = 2 * lam * user_session.pr_delta * lam_user_d
-                    users_diffs_squares[user_id] = discount_decay * users_diffs_squares[user_id] + user_diff * user_diff
-                    self.user_embeddings[user_id] -= user_diff * lr / np.sqrt(users_diffs_squares[user_id])
-                    for project_id in lam_projects_d:
-                        project_diff = 2 * lam * user_session.pr_delta * lam_projects_d[project_id]
-                        projects_diffs_squares[project_id] = discount_decay * projects_diffs_squares[project_id] +  project_diff * project_diff
-                        self.project_embeddings[project_id] -= project_diff * lr / np.sqrt(projects_diffs_squares[project_id])
-            if verbose:  # and (optimization_iter % 5 == 0 or optimization_iter in [1, 2]):
+            for user_id, session in self.events:
+                if session.pid not in done_projects:
+                    done_projects.add(session.pid)
+                    lambdas_by_project.accept(user_id, session)
+                    continue
+                if session.n_tasks != 0:
+                    self._update_glove_session_params(user_id, session, lambdas_by_project, users_diffs_squares,
+                                                      projects_diffs_squares, discount_decay, self.learning_rate)
+                    lambdas_by_project.accept(user_id, session)
+                else:
+                    last_times_sessions.add((user_id, session))
+            for user_id, session in last_times_sessions:
+                self._update_glove_last_params(user_id, session, lambdas_by_project, users_diffs_squares,
+                                               projects_diffs_squares, discount_decay, self.learning_rate)
+            self.learning_rate *= self.decay_rate
+            if verbose:
                 print("{}-th iter, ll = {}".format(optimization_iter, self.log_likelihood()))
                 if eval is not None:
                     print_metrics(self.get_applicable(), eval, samples_num=10)
                 print()
+
+    def _update_glove_session_params(self, user_id, session, lambdas_by_project, users_diffs_squares,
+                                     projects_diffs_squares, discount_decay, lr):
+        # update in session
+        lam, lam_user_d, lam_projects_d = lambdas_by_project.get(user_id, session.pid)
+        # lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, accum=False)
+        lam2 = lam ** 2
+        tau = session.pr_delta
+        exp_plus = np.exp(-lam2 * (tau + self.eps))
+        exp_minus = np.exp(-lam2 * max(0, tau - self.eps))
+        cur_ll_d = 2 * lam * ((tau + self.eps) * exp_plus - max(0, tau - self.eps) * exp_minus) / (
+                -exp_plus + exp_minus)
+        if math.isnan(cur_ll_d):
+            cur_ll_d = 0.
+
+        user_diff = cur_ll_d * lam_user_d
+        users_diffs_squares[user_id] = discount_decay * users_diffs_squares[user_id] + user_diff * user_diff
+        self.user_embeddings[user_id] += user_diff * lr / np.sqrt(users_diffs_squares[user_id])
+        for project_id in lam_projects_d:
+            project_diff = cur_ll_d * lam_projects_d[project_id]
+            projects_diffs_squares[project_id] = discount_decay * projects_diffs_squares[
+                project_id] + project_diff * project_diff
+            self.project_embeddings[project_id] += project_diff * lr / np.sqrt(
+                projects_diffs_squares[project_id])
+
+    def _update_glove_last_params(self, user_id, session, lambdas_by_project, users_diffs_squares,
+                                  projects_diffs_squares, discount_decay, lr):
+        # update in the end
+        # lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, accum=False)
+        lam, lam_user_d, lam_projects_d = lambdas_by_project.get(user_id, session.pid)
+        user_diff = 2 * lam * session.pr_delta * lam_user_d
+        users_diffs_squares[user_id] = discount_decay * users_diffs_squares[user_id] + user_diff * user_diff
+        self.user_embeddings[user_id] -= user_diff * lr / np.sqrt(users_diffs_squares[user_id])
+        for project_id in lam_projects_d:
+            project_diff = 2 * lam * session.pr_delta * lam_projects_d[project_id]
+            projects_diffs_squares[project_id] = discount_decay * projects_diffs_squares[
+                project_id] + project_diff * project_diff
+            self.project_embeddings[project_id] -= project_diff * lr / np.sqrt(projects_diffs_squares[project_id])
 
     def _session_likelihood(self, user_id, user_session, lambdas_by_project):
         raise NotImplementedError()

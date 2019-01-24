@@ -40,6 +40,4 @@ def item_recommendation_mae(model, data):
             count += 1
 
             model.accept(user_id, session)
-            if count % 1000 == 0:
-                print("count = {}, rec_mae = {}".format(count, errors / count))
     return errors / count
