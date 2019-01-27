@@ -11,7 +11,7 @@ from src.main.python.data_preprocess.lastfm import lastfm_read_raw_data, lastfm_
 from src.main.python.data_preprocess.common import filter_data, train_test_split
 from src.test.python.metrics import return_time_mae, item_recommendation_mae
 
-TOLOKA_FILENAME = "~/data/mlimlab/erc/datasets/sessions_2018_10_01_2018_10_02"
+TOLOKA_FILENAME = "~/data/mlimlab/erc/datasets/sessions_2018_10_01_2018_10_02_salt_simple_merge"
 LASTFM_FILENAME = "~/data/mlimlab/erc/datasets/lastfm-dataset-1K/" \
                   "userid-timestamp-artid-artname-traid-traname_1M.tsv"
 
@@ -43,8 +43,8 @@ def train(model, data, eval, dim, beta, other_project_importance, learning_rate,
 
     print("start ll = {}, return_time = {}".format(
         model.log_likelihood(),
-        return_time_mae(model.get_applicable(), eval, samples_num=10))
-    )
+        return_time_mae(model.get_applicable(), eval, samples_num=10)
+    ))
     if optimization_type == "glove":
         model.glove_like_optimisation(iter_num=iter_num, verbose=True, eval=eval)
     elif optimization_type == "sgd":
@@ -71,10 +71,8 @@ def toloka_test():
     beta = 0.001
     other_project_importance = 0.2
     # learning_rate = 1.5
-    learning_rate = 0.1
-    optimization_type = "sgd"
     iter_num = 2
-    size = 10000
+    size = 10 * 1000
     samples_num = 10
     train_ratio = 0.76
     users_num = None
@@ -92,10 +90,12 @@ def toloka_test():
     X_tr, X_te = train_test_split(X, train_ratio)
     model = None
 
+    learning_rate = 0.001
     # model = train(None, X_tr, X_te, dim, beta, other_project_importance, learning_rate, iter_num=2,
     #               optimization_type="glove", model_path_in=model_path_in, model_path_out=model_path_out)
 
-    model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate=15 * learning_rate,
+    learning_rate = 0.01
+    model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate=learning_rate,
                   iter_num=iter_num, optimization_type="sgd",
                   model_path_in=model_path_in, model_path_out=model_path_out)
 
@@ -106,8 +106,6 @@ def lastfm_test():
     dim = 15
     beta = 0.001
     other_project_importance = 0.1
-    learning_rate = 0.0005
-    iter_num = 1
     size = 1 * 1000 * 1000
     samples_num = 10
     train_ratio = 0.75
@@ -126,10 +124,12 @@ def lastfm_test():
     X_tr, X_te = train_test_split(X, train_ratio)
     model = None
 
-    model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate, iter_num=1,
-                  optimization_type="glove", model_path_in=model_path_in, model_path_out=model_path_out)
+    learning_rate = 0.001
+    # model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate, iter_num=2,
+    #               optimization_type="glove", model_path_in=model_path_in, model_path_out=model_path_out)
 
-    model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate=15*learning_rate, iter_num=1,
+    learning_rate = 0.002
+    model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate=learning_rate, iter_num=5,
                   optimization_type="sgd", model_path_in=model_path_in, model_path_out=model_path_out)
 
     print_metrics(model.get_applicable(), X_te, samples_num=samples_num)
@@ -210,7 +210,7 @@ if __name__ == "__main__":
     # args = argument_parser.parse_args()
 
     start_time = time.time()
-    # toloka_test()
-    lastfm_test()
+    toloka_test()
+    # lastfm_test()
     # args.func(args)
     print("time:", time.time() - start_time)

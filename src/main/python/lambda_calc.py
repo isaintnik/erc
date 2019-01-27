@@ -211,15 +211,14 @@ class UserLambda:
 
 
 class UserProjectLambdaManager:
-    def __init__(self, user_embeddings, project_embeddings, interaction_calculator, beta, other_project_importance, default_lambda,
-                 lambda_confidence, derivative, accum=True, square=False):
+    def __init__(self, user_embeddings, project_embeddings, interaction_calculator, beta, other_project_importance,
+                 default_lambda, lambda_confidence, derivative, accum=True, square=False):
         self.user_lambdas = {user_id: UserLambda(user_embeddings[user_id], beta, other_project_importance,
                                                  interaction_calculator.get_user_supplier(user_id),
                                                  default_lambda=default_lambda,
                                                  lambda_confidence=lambda_confidence,
                                                  derivative=derivative, square=square)
                              for user_id in user_embeddings.keys()}
-        # lambdas_by_project = {user_id: {pid: 0 for pid in project_embeddings.keys()} for user_id in user_embeddings.keys()}
         self.prev_user_action_time = {}
         self.project_embeddings = project_embeddings
         self.accum = accum
@@ -227,7 +226,7 @@ class UserProjectLambdaManager:
     def get(self, user_id, project_id):
         raise NotImplementedError()
 
-    def accept(self, user_id, session):
+    def accept(self, session):
         raise NotImplementedError()
 
 
@@ -240,21 +239,21 @@ class UserProjectLambdaManagerLookAhead(UserProjectLambdaManager):
     def get(self, user_id, project_id):
         return self.user_lambdas[user_id].get(project_id, accum=self.accum)
 
-    def accept(self, user_id, session):
-        if user_id not in self.prev_user_action_time:
+    def accept(self, session):
+        if session.uid not in self.prev_user_action_time:
             # it's wrong, we can update even if it's first item of user
             # if default lambda = u^T \cdot i, we get different lambdas for unseen projects
-            self.prev_user_action_time[user_id] = session.start_ts
+            self.prev_user_action_time[session.uid] = session.start_ts
         else:
-            self.user_lambdas[user_id].update(self.project_embeddings[session.pid], session,
-                                              session.start_ts - self.prev_user_action_time[user_id])
+            self.user_lambdas[session.uid].update(self.project_embeddings[session.pid], session,
+                                              session.start_ts - self.prev_user_action_time[session.uid])
 
 
 class UserProjectLambdaManagerNotLookAhead(UserProjectLambdaManager):
-    def __init__(self, user_embeddings, project_embeddings, interaction_calculator, beta, other_project_importance, default_lambda,
-                 lambda_confidence, derivative, accum=True, square=False):
-        super().__init__(user_embeddings, project_embeddings, interaction_calculator, beta, other_project_importance, default_lambda,
-                         lambda_confidence, derivative, accum, square)
+    def __init__(self, user_embeddings, project_embeddings, interaction_calculator, beta, other_project_importance,
+                 default_lambda, lambda_confidence, derivative, accum=True, square=False):
+        super().__init__(user_embeddings, project_embeddings, interaction_calculator, beta, other_project_importance,
+                         default_lambda, lambda_confidence, derivative, accum, square)
         self.saved_lambdas_by_project = {user_id: {pid: -1 for pid in project_embeddings.keys()} for user_id in
                                          user_embeddings.keys()}
 
@@ -262,13 +261,16 @@ class UserProjectLambdaManagerNotLookAhead(UserProjectLambdaManager):
         assert self.saved_lambdas_by_project[user_id][project_id] != -1
         return self.saved_lambdas_by_project[user_id][project_id]
 
-    def accept(self, user_id, session):
-        if user_id not in self.prev_user_action_time:
-            self.prev_user_action_time[user_id] = session.start_ts
+    def accept(self, session):
+        if session.uid not in self.prev_user_action_time:
+            self.prev_user_action_time[session.uid] = session.start_ts
+            self.saved_lambdas_by_project[session.uid][session.pid] = self.user_lambdas[session.uid].get(session.pid,
+                                                                                                 accum=self.accum)
         else:
-            self.user_lambdas[user_id].update(self.project_embeddings[session.pid], session,
-                                              session.start_ts - self.prev_user_action_time[user_id])
-            self.saved_lambdas_by_project[user_id][session.pid] = self.user_lambdas[user_id].get(session.pid, accum=self.accum)
+            self.user_lambdas[session.uid].update(self.project_embeddings[session.pid], session,
+                                                  session.start_ts - self.prev_user_action_time[session.uid])
+            self.saved_lambdas_by_project[session.uid][session.pid] = self.user_lambdas[session.uid].get(session.pid,
+                                                                                                 accum=self.accum)
 
 
 def projects_index(history):
