@@ -5,13 +5,13 @@ import time
 
 import numpy as np
 
-from src.main.python.model import Model2Lambda
+from src.main.python.model import Model2Lambda, ModelExpLambda
 from src.main.python.data_preprocess.toloka import toloka_read_raw_data, toloka_prepare_data
 from src.main.python.data_preprocess.lastfm import lastfm_read_raw_data, lastfm_prepare_data
 from src.main.python.data_preprocess.common import filter_data, train_test_split
 from src.test.python.metrics import return_time_mae, item_recommendation_mae
 
-TOLOKA_FILENAME = "~/data/mlimlab/erc/datasets/sessions_2018_10_01_2018_10_02_salt_simple_merge"
+TOLOKA_FILENAME = "~/data/mlimlab/erc/datasets/toloka_2018_10_01_2018_10_02_salt_simple_merge"
 LASTFM_FILENAME = "~/data/mlimlab/erc/datasets/lastfm-dataset-1K/" \
                   "userid-timestamp-artid-artname-traid-traname_1M.tsv"
 
@@ -103,7 +103,7 @@ def toloka_test():
 
 
 def lastfm_test():
-    dim = 15
+    dim = 25
     beta = 0.001
     other_project_importance = 0.1
     size = 1 * 1000 * 1000
@@ -128,7 +128,7 @@ def lastfm_test():
     # model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate, iter_num=2,
     #               optimization_type="glove", model_path_in=model_path_in, model_path_out=model_path_out)
 
-    learning_rate = 0.002
+    learning_rate = 0.01
     model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate=learning_rate, iter_num=5,
                   optimization_type="sgd", model_path_in=model_path_in, model_path_out=model_path_out)
 
@@ -210,7 +210,7 @@ if __name__ == "__main__":
     # args = argument_parser.parse_args()
 
     start_time = time.time()
-    toloka_test()
-    # lastfm_test()
+    # toloka_test()
+    lastfm_test()
     # args.func(args)
     print("time:", time.time() - start_time)
