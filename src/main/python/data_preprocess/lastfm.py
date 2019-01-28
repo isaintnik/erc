@@ -19,12 +19,14 @@ def lastfm_raw_to_session(raw, user_to_index, project_to_index, last_time_done):
         project_to_index[project_id] = len(project_to_index)
     if user_id not in user_to_index:
         user_to_index[user_id] = len(user_to_index)
+        last_time_done[user_to_index[user_id]] = {}
+
     start_ts = ts / (60 * 60)
     end_ts = 0  # don't used
-    pr_delta = None if project_to_index[project_id] not in last_time_done \
-        else (ts - last_time_done[project_to_index[project_id]]) / (60 * 60)
+    pr_delta = None if project_to_index[project_id] not in last_time_done[user_to_index[user_id]] \
+        else (ts - last_time_done[user_to_index[user_id]][project_to_index[project_id]]) / (60 * 60)
     n_tasks = 1
-    last_time_done[project_to_index[project_id]] = ts
+    last_time_done[user_to_index[user_id]][project_to_index[project_id]] = ts
     return USession(user_to_index[user_id], project_to_index[project_id], start_ts, end_ts, pr_delta, n_tasks)
 
 
