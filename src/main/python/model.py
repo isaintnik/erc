@@ -64,7 +64,7 @@ class Model:
         done_projects = {user_id: set() for user_id in self.user_embeddings}
         last_times_sessions = set()
         interaction_calculator = LazyInteractionsCalculator(self.user_embeddings, self.project_embeddings)
-        lambdas_by_project = UserProjectLambdaManagerNotLookAhead(
+        lambdas_by_project = UserProjectLambdaManagerLookAhead(
             self.user_embeddings, self.project_embeddings, interaction_calculator, self.beta,
             self.other_project_importance, self.default_lambda, self.lambda_confidence, derivative, accum=True,
             square=self.square)
@@ -122,11 +122,11 @@ class Model:
         )
         for optimization_iter in range(iter_num):
             for session in self.events:
-                if session.pid not in done_projects[session.uid]:
+                if session.pr_delta is None or session.pid not in done_projects[session.uid]:
                     done_projects[session.uid].add(session.pid)
                     lambdas_by_project.accept(session)
                     continue
-                assert not (session.pid in done_projects[session.uid] and session.pr_delta is None)
+                # assert not (session.pid in done_projects[session.uid] and session.pr_delta is None)
                 if session.n_tasks != 0:
                     self._update_glove_session_params(session, lambdas_by_project, users_diffs_squares,
                                                       projects_diffs_squares, discount_decay, self.learning_rate)
@@ -145,13 +145,12 @@ class Model:
 
     def _update_glove_session_params(self, session, lambdas_by_project, users_diffs_squares,
                                      projects_diffs_squares, discount_decay, lr):
-        # update in session
         lam, lam_user_d, lam_projects_d = lambdas_by_project.get(session.uid, session.pid)
         # lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, accum=False)
-        lam2 = lam ** 2
+        tr_lam = lam ** 2
         tau = session.pr_delta
-        exp_plus = np.exp(-lam2 * (tau + self.eps))
-        exp_minus = np.exp(-lam2 * max(0, tau - self.eps))
+        exp_plus = np.exp(-tr_lam * (tau + self.eps))
+        exp_minus = np.exp(-tr_lam * max(0, tau - self.eps))
         cur_ll_d = 2 * lam * ((tau + self.eps) * exp_plus - max(0, tau - self.eps) * exp_minus) / (
                 -exp_plus + exp_minus)
         if math.isnan(cur_ll_d):
@@ -350,36 +349,30 @@ class ApplicableModel:
                  lambda_transform=lambda x: x ** 2):
         self.user_embeddings = user_embeddings
         self.project_embeddings = project_embeddings
+
+        mean_user = np.zeros_like(self.user_embeddings[0])
+        mean_project = np.zeros_like(self.project_embeddings[0])
+        for user_embedding in self.user_embeddings.values():
+            mean_user += user_embedding
+        for project_embedding in self.project_embeddings.values():
+            mean_project += project_embedding
+        self.user_embeddings[-1] = mean_user
+        self.project_embeddings[-1] = mean_project
+
         self.beta = beta
         self.lambda_transform = lambda_transform
         self.other_project_importance = other_project_importance
         self.interaction_calculator = LazyInteractionsCalculator(self.user_embeddings, self.project_embeddings)
-        self.user_lambdas = {user_id: UserLambda(user_embedding, self.beta,
-                                                 self.other_project_importance,
-                                                 self.interaction_calculator.get_user_supplier(user_id),
-                                                 default_lambda=default_lambda, lambda_confidence=1, derivative=False)
-                             for user_id, user_embedding in user_embeddings.items()}
-        self.default_user_id = list(user_embeddings.keys())[0]
-        self.last_user_session = {}
-        self.lambda_values = {user_id: {} for user_id in user_embeddings}
+        self.lambdas_by_project = UserProjectLambdaManagerLookAhead(
+            self.user_embeddings, self.project_embeddings, self.interaction_calculator, self.beta,
+            self.other_project_importance, default_lambda=default_lambda, lambda_confidence=1, derivative=False,
+            accum=True, square=False)
 
     def accept(self, session):
-        if session.uid not in self.user_lambdas or session.pid not in self.project_embeddings:
-            # what we can do?
-            return
-        if session.uid in self.last_user_session:
-            self.user_lambdas[session.uid].update(self.project_embeddings[session.pid], session,
-                                                  session.start_ts - self.last_user_session[session.uid].start_ts)
-            self.lambda_values[session.uid][session.pid] = self.lambda_transform(self.user_lambdas[session.uid].get(session.pid))
-        self.last_user_session[session.uid] = session
+        self.lambdas_by_project.accept(session)
 
     def get_lambda(self, user_id, project_id):
-        # fix default lambda
-        if user_id not in self.user_lambdas or project_id not in self.project_embeddings or \
-                user_id not in self.lambda_values or project_id not in self.lambda_values[user_id]:
-            return self.lambda_transform(self.user_lambdas.get(user_id, self.user_lambdas[self.default_user_id])
-                                         .get(project_id if project_id in self.project_embeddings else -1))
-        return self.lambda_values[user_id][project_id]
+        return self.lambda_transform(self.lambdas_by_project.get(user_id, project_id))
 
     def time_delta(self, user_id, project_id, size=1):
         lam = self.get_lambda(user_id, project_id)

@@ -245,8 +245,10 @@ class UserProjectLambdaManagerLookAhead(UserProjectLambdaManager):
             # if default lambda = u^T \cdot i, we get different lambdas for unseen projects
             self.prev_user_action_time[session.uid] = session.start_ts
         else:
+            if session.pid not in self.project_embeddings:
+                self.project_embeddings[session.pid] = np.copy(self.project_embeddings[-1])
             self.user_lambdas[session.uid].update(self.project_embeddings[session.pid], session,
-                                              session.start_ts - self.prev_user_action_time[session.uid])
+                                                  session.start_ts - self.prev_user_action_time[session.uid])
 
 
 class UserProjectLambdaManagerNotLookAhead(UserProjectLambdaManager):
@@ -258,7 +260,9 @@ class UserProjectLambdaManagerNotLookAhead(UserProjectLambdaManager):
                                          user_embeddings.keys()}
 
     def get(self, user_id, project_id):
-        assert self.saved_lambdas_by_project[user_id][project_id] != -1
+        if self.saved_lambdas_by_project[user_id][project_id] == -1:
+            self.saved_lambdas_by_project[user_id][project_id] = self.user_lambdas[user_id].get(project_id,
+                                                                                                accum=self.accum)
         return self.saved_lambdas_by_project[user_id][project_id]
 
     def accept(self, session):
@@ -267,6 +271,9 @@ class UserProjectLambdaManagerNotLookAhead(UserProjectLambdaManager):
             self.saved_lambdas_by_project[session.uid][session.pid] = self.user_lambdas[session.uid].get(session.pid,
                                                                                                  accum=self.accum)
         else:
+            # pid = session.pid if session.pid in self.project_embeddings else -1
+            if session.pid not in self.project_embeddings:
+                self.project_embeddings[session.pid] = np.copy(self.project_embeddings[-1])
             self.user_lambdas[session.uid].update(self.project_embeddings[session.pid], session,
                                                   session.start_ts - self.prev_user_action_time[session.uid])
             self.saved_lambdas_by_project[session.uid][session.pid] = self.user_lambdas[session.uid].get(session.pid,
