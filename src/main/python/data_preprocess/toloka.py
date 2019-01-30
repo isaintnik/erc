@@ -8,9 +8,8 @@ from src.main.python.model import USession
 
 def toloka_read_raw_data(filename, size=None):
     raw_data = pd.read_json(filename, lines=True)
-    print(raw_data.head())
+    print("original data shape", raw_data.shape)
     raw_data = raw_data.values
-    print(raw_data[0, 0], raw_data[0, 1], raw_data[0, 2])
     return raw_data if size is None else raw_data[:size]
 
 
@@ -33,7 +32,7 @@ def toloka_raw_to_session(raw, user_to_index, project_to_index, last_time_done):
 
     end_ts = None
     pr_delta = None if project_to_index[project_id] not in last_time_done[user_to_index[user_id]] \
-        else (start_ts - last_time_done[user_to_index[user_id]][project_to_index[project_id]]) / (60 * 60)
+        else (start_ts - last_time_done[user_to_index[user_id]][project_to_index[project_id]])
     n_tasks = 1
     last_time_done[user_to_index[user_id]][project_to_index[project_id]] = start_ts
     return USession(user_to_index[user_id], project_to_index[project_id], start_ts, end_ts, pr_delta, n_tasks)
@@ -52,4 +51,5 @@ def toloka_prepare_data(data):
             pr_deltas.append(session.pr_delta)
     pr_deltas = np.array(pr_deltas)
     print("mean pr_delta", np.mean(pr_deltas), np.std(pr_deltas))
+    print("{} events, {} users, {} projects".format(len(events), len(user_to_index), len(project_to_index)))
     return events

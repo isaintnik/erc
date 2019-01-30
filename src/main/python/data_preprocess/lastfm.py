@@ -62,4 +62,5 @@ def lastfm_prepare_data(data):
             pr_deltas.append(session.pr_delta)
     pr_deltas = np.array(pr_deltas)
     print("Mean pr_delta = {}, std = {}".format(np.mean(pr_deltas), np.std(pr_deltas)))
+    print("{} events, {} users, {} projects".format(len(events), len(user_to_index), len(project_to_index)))
     return events
