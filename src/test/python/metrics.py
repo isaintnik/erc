@@ -19,14 +19,13 @@ def item_recommendation_mae(model, events):
     count = 0
     for session in events:
         if session.n_tasks > 0:
-            observed_next_pid = session.pid
-            if observed_next_pid not in model.project_embeddings:
+            if session.uid not in model.user_embeddings or session.pid not in model.project_embeddings:
+                count -= 1
                 continue
-
             project_lambdas = [(model.get_lambda(session.uid, pid), pid)
                                for pid in model.project_embeddings]
             sorted_pids = [pid for l, pid in sorted(project_lambdas, reverse=True)]
-            errors += sorted_pids.index(observed_next_pid)
+            errors += sorted_pids.index(session.pid)
             count += 1
 
             model.accept(session)
@@ -34,24 +33,40 @@ def item_recommendation_mae(model, events):
 
 
 def unseen_recommendation(model, train, test, top=1):
-    unseen_projects = {user_id: set() for user_id in model.user_embeddings}
+    will_see_projects = {}
+    all_unseen_projects = {user_id: set(model.project_embeddings.keys()) for user_id in model.user_embeddings if user_id >= 0}
+
     for session in test:
-        unseen_projects[session.uid].add(session.pid)
+        if session.uid not in will_see_projects:
+            will_see_projects[session.uid] = set()
+            all_unseen_projects[session.uid] = set()
+        will_see_projects[session.uid].add(session.pid)
+        all_unseen_projects[session.uid].add(session.pid)
+
     for session in train:
-        if session.pid in unseen_projects[session.uid]:
-            unseen_projects[session.uid].discard(session.pid)
+        if session.uid in will_see_projects and session.pid in will_see_projects[session.uid]:
+            will_see_projects[session.uid].discard(session.pid)
+            all_unseen_projects[session.uid].discard(session.pid)
     match = 0.
-    count = top * len(test)
+    count = len(test)
     for session in test:
-        project_lambdas = [(model.get_lambda(session.uid, pid), pid)
-                           for pid in model.project_embeddings]
+        if session.uid not in model.user_embeddings or session.pid not in model.project_embeddings:
+            count -= 1
+            continue
+        # project_lambdas = [(model.get_lambda(session.uid, pid), pid)
+        #                    for pid in model.project_embeddings]
+        assert session.uid in all_unseen_projects
+        assert session.uid in model.user_embeddings
+        assert session.pid in model.project_embeddings
+        project_lambdas = [(model.user_embeddings[session.uid] @ model.project_embeddings[pid].T, pid)
+                           for pid in all_unseen_projects[session.uid]]
         top_projects = [pid for l, pid in sorted(project_lambdas, reverse=True)][:top]
         ok = False
         for project in top_projects:
-            if project in unseen_projects[session.uid]:
+            if project in will_see_projects[session.uid]:
                 ok = True
                 break
         if ok:
             match += 1
-        unseen_projects[session.uid].discard(session.pid)
+        will_see_projects[session.uid].discard(session.pid)
     return match / count

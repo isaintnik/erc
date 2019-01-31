@@ -45,6 +45,15 @@ def train(model, data, eval, dim, beta, other_project_importance, learning_rate,
         model.log_likelihood(),
         return_time_mae(model.get_applicable(), eval, samples_num=10)
     ))
+
+    model_ap = model.get_applicable()
+    unseen_rec = unseen_recommendation(model_ap, data, eval, top=1)
+    print("unseen_recs:", unseen_rec)
+    unseen_rec_5 = unseen_recommendation(model_ap, data, eval, top=5)
+    print("unseen_recs@5:", unseen_rec_5)
+    unseen_rec_20 = unseen_recommendation(model_ap, data, eval, top=20)
+    print("unseen_recs@20:", unseen_rec_20)
+
     if optimization_type == "glove":
         model.glove_like_optimisation(iter_num=iter_num, verbose=True, eval=eval)
     elif optimization_type == "sgd":
@@ -65,7 +74,9 @@ def print_metrics(model_application, X_te, X_tr=None, samples_num=10):
     recommend_mae = item_recommendation_mae(model_application, X_te)
     if X_tr is not None:
         unseen_rec = unseen_recommendation(model_application, X_tr, X_te, top=1)
-        print("return_time = {}, recommendation_mae = {}, unseen_rec = {}".format(return_time, recommend_mae, unseen_rec))
+        unseen_rec_5 = unseen_recommendation(model_application, X_tr, X_te, top=5)
+        print("return_time = {}, recommendation_mae = {}, unseen_rec = {}, unseen_rec@5 = {}".format(
+            return_time, recommend_mae, unseen_rec, unseen_rec_5))
     else:
         print("return_time = {}, recommendation_mae = {}".format(return_time, recommend_mae))
 
@@ -213,7 +224,7 @@ if __name__ == "__main__":
     # args = argument_parser.parse_args()
 
     start_time = time.time()
-    # toloka_test()
-    lastfm_test()
+    toloka_test()
+    # lastfm_test()
     # args.func(args)
     print("time:", time.time() - start_time)

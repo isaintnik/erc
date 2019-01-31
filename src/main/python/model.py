@@ -41,6 +41,8 @@ class Model:
         else:
             self.project_embeddings = projects_embeddings_prior
 
+        self._update_default_embeddings()
+
         self.default_lambda = 1.
         self.lambda_confidence = 1.
         pr_deltas = []
@@ -59,9 +61,9 @@ class Model:
 
     def _likelihood_derivative(self, derivative=False):
         ll = 0.
-        users_derivatives = {k: np.zeros_like(v) for k, v in self.user_embeddings.items()}
-        project_derivatives = {k: np.zeros_like(v) for k, v in self.project_embeddings.items()}
-        done_projects = {user_id: set() for user_id in self.user_embeddings}
+        users_derivatives = {user_id: np.zeros_like(self.user_embeddings[user_id]) for user_id in self.user_ids}
+        project_derivatives = {project_id: np.zeros_like(self.project_embeddings[project_id]) for project_id in self.project_ids}
+        done_projects = {user_id: set() for user_id in self.user_ids}
         last_times_sessions = set()
         interaction_calculator = LazyInteractionsCalculator(self.user_embeddings, self.project_embeddings)
         lambdas_by_project = UserProjectLambdaManagerLookAhead(
@@ -200,11 +202,21 @@ class Model:
     def optimization_step(self):
         users_derivatives, project_derivatives = self.ll_derivative()
         lr = self.learning_rate / self.data_size
-        for user_id in self.user_embeddings:
+        for user_id in self.user_ids:
             self.user_embeddings[user_id] += users_derivatives[user_id] * lr
-        for project_id in self.project_embeddings:
+        for project_id in self.project_ids:
             self.project_embeddings[project_id] += project_derivatives[project_id] * lr
         self.learning_rate *= self.decay_rate
+
+    def _update_default_embeddings(self):
+        mean_user = np.zeros_like(self.user_embeddings[0])
+        mean_project = np.zeros_like(self.project_embeddings[0])
+        for user_embedding in self.user_embeddings.values():
+            mean_user += user_embedding
+        for project_embedding in self.project_embeddings.values():
+            mean_project += project_embedding
+        self.user_embeddings[-1] = mean_user
+        self.project_embeddings[-1] = mean_project
 
 
 class Model2UA(Model):

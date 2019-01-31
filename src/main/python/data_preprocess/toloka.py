@@ -7,10 +7,11 @@ from src.main.python.model import USession
 
 
 def toloka_read_raw_data(filename, size=None):
-    raw_data = pd.read_json(filename, lines=True)
-    print("original data shape", raw_data.shape)
-    raw_data = raw_data.values
-    return raw_data if size is None else raw_data[:size]
+    raw_datas = pd.read_json(filename, lines=True, chunksize=size)
+    for raw_data in raw_datas:
+        print("original data shape", raw_data.shape)
+        raw_data = raw_data.values
+        return raw_data if size is None else raw_data[:size]
 
 
 def toloka_raw_to_session(raw, user_to_index, project_to_index, last_time_done):

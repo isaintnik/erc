@@ -213,14 +213,24 @@ class UserLambda:
 class UserProjectLambdaManager:
     def __init__(self, user_embeddings, project_embeddings, interaction_calculator, beta, other_project_importance,
                  default_lambda, lambda_confidence, derivative, accum=True, square=False):
+        self.user_embeddings = user_embeddings
+        self.project_embeddings = project_embeddings
+        self.interaction_calculator = interaction_calculator
+        self.beta = beta
+        self.other_project_importance = other_project_importance
+        self.default_lambda = default_lambda
+        self.lambda_confidence=lambda_confidence
+        self.derivative = derivative
+        self.accum = accum
+        self.square = square
+
         self.user_lambdas = {user_id: UserLambda(user_embeddings[user_id], beta, other_project_importance,
-                                                 interaction_calculator.get_user_supplier(user_id),
+                                                 self.interaction_calculator.get_user_supplier(user_id),
                                                  default_lambda=default_lambda,
                                                  lambda_confidence=lambda_confidence,
                                                  derivative=derivative, square=square)
                              for user_id in user_embeddings.keys()}
         self.prev_user_action_time = {}
-        self.project_embeddings = project_embeddings
         self.accum = accum
 
     def get(self, user_id, project_id):
@@ -247,6 +257,13 @@ class UserProjectLambdaManagerLookAhead(UserProjectLambdaManager):
         else:
             if session.pid not in self.project_embeddings:
                 self.project_embeddings[session.pid] = np.copy(self.project_embeddings[-1])
+            if session.uid not in self.user_embeddings:
+                self.user_embeddings[session.uid] = np.copy(self.user_embeddings[-1])
+                self.user_lambdas[session.uid] = UserLambda(
+                    self.user_embeddings[session.uid], self.beta, self.other_project_importance,
+                    self.interaction_calculator.get_user_supplier(session.uid), self.default_lambda, self.lambda_confidence,
+                    self.derivative, self.square
+                )
             self.user_lambdas[session.uid].update(self.project_embeddings[session.pid], session,
                                                   session.start_ts - self.prev_user_action_time[session.uid])
 
