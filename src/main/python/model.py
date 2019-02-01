@@ -70,22 +70,12 @@ class Model:
             self.user_embeddings, self.project_embeddings, interaction_calculator, self.beta,
             self.other_project_importance, self.default_lambda, self.lambda_confidence, derivative, accum=True,
             square=self.square)
-        # user_lambdas = {user_id: UserLambda(self.user_embeddings[user_id], self.beta, self.other_project_importance,
-        #                          interaction_calculator.get_user_supplier(user_id),
-        #                          default_lambda=self.default_lambda, lambda_confidence=self.lambda_confidence,
-        #                          derivative=derivative, square=self.square) for user_id in self.user_ids}
-        # lambdas_by_project = {}
         for session in self.events:
-            # if session.uid not in lambdas_by_project:
-            #     lambdas_by_project[session.uid] = {}
-
             # first time done projects tasks, skip ll update
             # i forget why we do like this
             if session.pid not in done_projects[session.uid]:
                 done_projects[session.uid].add(session.pid)
                 lambdas_by_project.accept(session)
-                # user_lambdas[session.uid].update(self.project_embeddings[session.pid], session, 1)
-                # lambdas_by_project[session.uid][session.pid] = user_lambdas[session.uid].get(session.pid)
                 continue
 
             if session.n_tasks != 0:
@@ -95,8 +85,6 @@ class Model:
                 else:
                     ll += self._session_likelihood(session, lambdas_by_project)
                 lambdas_by_project.accept(session)
-                # user_lambdas[session.uid].update(self.project_embeddings[session.pid], session, 1)
-                # lambdas_by_project[session.uid][session.pid] = user_lambdas[session.uid].get(session.pid)
             else:
                 last_times_sessions.add(session)
 

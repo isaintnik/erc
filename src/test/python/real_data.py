@@ -9,7 +9,8 @@ from src.main.python.model import Model2Lambda, ModelExpLambda
 from src.main.python.data_preprocess.toloka import toloka_read_raw_data, toloka_prepare_data
 from src.main.python.data_preprocess.lastfm import lastfm_read_raw_data, lastfm_prepare_data
 from src.main.python.data_preprocess.common import filter_data, train_test_split
-from src.test.python.metrics import return_time_mae, item_recommendation_mae, unseen_recommendation
+from src.test.python.metrics import return_time_mae, item_recommendation_mae, unseen_recommendation, \
+    unseen_recommendation_random
 
 TOLOKA_FILENAME = "~/data/mlimlab/erc/datasets/toloka_2018_10_01_2018_11_01_salt_simple_merge"
 LASTFM_FILENAME = "~/data/mlimlab/erc/datasets/lastfm-dataset-1K/" \
@@ -54,6 +55,13 @@ def train(model, data, eval, dim, beta, other_project_importance, learning_rate,
     unseen_rec_20 = unseen_recommendation(model_ap, data, eval, top=20)
     print("unseen_recs@20:", unseen_rec_20)
 
+    unseen_rec_random = unseen_recommendation_random(model_ap, data, eval, top=1)
+    print("unseen_recs_random:", unseen_rec_random)
+    unseen_rec_random_5 = unseen_recommendation_random(model_ap, data, eval, top=5)
+    print("unseen_recs_random@5:", unseen_rec_random_5)
+    unseen_rec_random_20 = unseen_recommendation_random(model_ap, data, eval, top=20)
+    print("unseen_recs_random@20:", unseen_rec_random_20)
+
     if optimization_type == "glove":
         model.glove_like_optimisation(iter_num=iter_num, verbose=True, eval=eval)
     elif optimization_type == "sgd":
@@ -82,14 +90,14 @@ def print_metrics(model_application, X_te, X_tr=None, samples_num=10):
 
 
 def toloka_test():
-    dim = 2
+    dim = 5
     beta = 0.001
-    other_project_importance = 0.2
+    other_project_importance = 0.1
     # learning_rate = 1.5
-    iter_num = 2
+    # iter_num = 2
     size = 100 * 1000
     samples_num = 10
-    train_ratio = 0.76
+    train_ratio = 0.75
     users_num = None
     projects_num = None
     top_items = False
@@ -105,7 +113,7 @@ def toloka_test():
     X_tr, X_te = train_test_split(X, train_ratio)
     model = None
 
-    learning_rate = 0.001
+    # learning_rate = 0.001
     # model = train(None, X_tr, X_te, dim, beta, other_project_importance, learning_rate, iter_num=2,
     #               optimization_type="glove", model_path_in=model_path_in, model_path_out=model_path_out)
 
