@@ -4,12 +4,23 @@ import warnings
 from collections import namedtuple
 import numpy as np
 
-from src.main.python.lambda_calc import UserLambda, LazyInteractionsCalculator, SimpleInteractionsCalculator,\
-    UserProjectLambdaManagerLookAhead, UserProjectLambdaManagerNotLookAhead
+from src.main.python.lambda_calc import UserLambda, LazyInteractionsCalculator, SimpleInteractionsCalculator, \
+    UserProjectLambdaManagerLookAhead, UserProjectLambdaManagerNotLookAhead, INVALID
 from src.test.python.metrics import return_time_mae, item_recommendation_mae
 
 
-USession = namedtuple('USession', 'uid pid start_ts end_ts pr_delta n_tasks')
+class USession:
+    def __init__(self, uid, pid, start_ts, end_ts, pr_delta, n_tasks):
+        self.uid = uid
+        self.pid = pid
+        self.start_ts = start_ts
+        self.end_ts = end_ts
+        self.pr_delta = pr_delta
+        self.n_tasks = n_tasks
+        if str(pid) == 'nan':
+            print()
+
+# USession = namedtuple('USession', 'uid pid start_ts end_ts pr_delta n_tasks')
 
 
 def print_metrics(model_application, X_te, samples_num=10):
@@ -197,43 +208,14 @@ class Model:
         self.learning_rate *= self.decay_rate
 
     def _update_default_embeddings(self):
-        mean_user = np.zeros_like(self.user_embeddings[0])
-        mean_project = np.zeros_like(self.project_embeddings[0])
+        mean_user = np.zeros_like(next(iter(self.user_embeddings.values())))
+        mean_project = np.zeros_like(next(iter(self.project_embeddings.values())))
         for user_embedding in self.user_embeddings.values():
             mean_user += user_embedding
         for project_embedding in self.project_embeddings.values():
             mean_project += project_embedding
-        self.user_embeddings[-1] = mean_user
-        self.project_embeddings[-1] = mean_project
-
-
-class Model2UA(Model):
-    def __init__(self, users_histories, dim, learning_rate=0.01, beta=0.01, eps=3600, other_project_importance=0.5,
-                 users_embeddings_prior=None, projects_embeddings_prior=None):
-        Model.__init__(self, users_histories, dim, learning_rate, beta, eps, other_project_importance,
-                       users_embeddings_prior, projects_embeddings_prior, square = True)
-
-    def _session_likelihood(self, user_id, user_session, user_lambda):
-        cur_lambda = user_lambda.get(user_session.pid)
-        return np.log(-np.exp(-cur_lambda * (user_session.pr_delta + self.eps)) +
-                      np.exp(-cur_lambda * (user_session.pr_delta - self.eps)))
-
-    def _last_likelihood(self, user_id, user_session, user_lambda):
-        return -user_lambda.get(user_session.pid) * user_session.pr_delta
-
-    def _update_session_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
-        lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
-        tau = user_session.pr_delta
-        cur_ll_d = ((tau + self.eps) * np.exp(-lam * (tau + self.eps)) -
-                    max(0, tau - self.eps) * np.exp(-lam * max(0, tau - self.eps))) / \
-                   (-np.exp(-lam * (tau + self.eps)) + np.exp(-lam * max(0, tau - self.eps)))
-        users_derivatives[user_id] += cur_ll_d * lam_user_d
-        project_derivatives[user_session.pid] += cur_ll_d * lam_projects_d
-
-    def _update_last_derivative(self, user_session, user_id, user_lambda, users_derivatives, project_derivatives):
-        lam, lam_user_d, lam_projects_d = user_lambda.get(user_session.pid, derivative=True)
-        users_derivatives[user_id] -= user_session.pr_delta * lam_user_d
-        project_derivatives[user_session.pid] -= user_session.pr_delta * lam_projects_d
+        self.user_embeddings[INVALID] = mean_user
+        self.project_embeddings[INVALID] = mean_project
 
 
 class Model2Lambda(Model):
@@ -350,14 +332,14 @@ class ApplicableModel:
         self.user_embeddings = user_embeddings
         self.project_embeddings = project_embeddings
 
-        mean_user = np.zeros_like(self.user_embeddings[0])
-        mean_project = np.zeros_like(self.project_embeddings[0])
+        mean_user = np.zeros_like(next(iter(self.user_embeddings.values())))
+        mean_project = np.zeros_like(next(iter(self.project_embeddings.values())))
         for user_embedding in self.user_embeddings.values():
             mean_user += user_embedding
         for project_embedding in self.project_embeddings.values():
             mean_project += project_embedding
-        self.user_embeddings[-1] = mean_user
-        self.project_embeddings[-1] = mean_project
+        self.user_embeddings[INVALID] = mean_user
+        self.project_embeddings[INVALID] = mean_project
 
         self.beta = beta
         self.lambda_transform = lambda_transform

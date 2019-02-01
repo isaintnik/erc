@@ -1,5 +1,7 @@
 import numpy as np
 
+INVALID="INVALID"
+
 DEFAULT_FOREIGN_COEFFICIENT = .3
 
 
@@ -256,9 +258,9 @@ class UserProjectLambdaManagerLookAhead(UserProjectLambdaManager):
             self.prev_user_action_time[session.uid] = session.start_ts
         else:
             if session.pid not in self.project_embeddings:
-                self.project_embeddings[session.pid] = np.copy(self.project_embeddings[-1])
+                self.project_embeddings[session.pid] = np.copy(self.project_embeddings[INVALID])
             if session.uid not in self.user_embeddings:
-                self.user_embeddings[session.uid] = np.copy(self.user_embeddings[-1])
+                self.user_embeddings[session.uid] = np.copy(self.user_embeddings[INVALID])
                 self.user_lambdas[session.uid] = UserLambda(
                     self.user_embeddings[session.uid], self.beta, self.other_project_importance,
                     self.interaction_calculator.get_user_supplier(session.uid), self.default_lambda, self.lambda_confidence,
@@ -266,6 +268,8 @@ class UserProjectLambdaManagerLookAhead(UserProjectLambdaManager):
                 )
             self.user_lambdas[session.uid].update(self.project_embeddings[session.pid], session,
                                                   session.start_ts - self.prev_user_action_time[session.uid])
+        if (session.uid == 'user_000001' and session.pid == '4Hero'):
+            print(self.get(session.uid, session.pid))
 
 
 class UserProjectLambdaManagerNotLookAhead(UserProjectLambdaManager):
@@ -288,9 +292,9 @@ class UserProjectLambdaManagerNotLookAhead(UserProjectLambdaManager):
             self.saved_lambdas_by_project[session.uid][session.pid] = self.user_lambdas[session.uid].get(session.pid,
                                                                                                  accum=self.accum)
         else:
-            # pid = session.pid if session.pid in self.project_embeddings else -1
+            # pid = session.pid if session.pid in self.project_embeddings else INVALID
             if session.pid not in self.project_embeddings:
-                self.project_embeddings[session.pid] = np.copy(self.project_embeddings[-1])
+                self.project_embeddings[session.pid] = np.copy(self.project_embeddings[INVALID])
             self.user_lambdas[session.uid].update(self.project_embeddings[session.pid], session,
                                                   session.start_ts - self.prev_user_action_time[session.uid])
             self.saved_lambdas_by_project[session.uid][session.pid] = self.user_lambdas[session.uid].get(session.pid,

@@ -67,6 +67,7 @@ def train_test_split(data, train_ratio):
     train, test = [], []
     data = sorted(data, key=lambda s: s.start_ts)
     split_time = get_split_time(data, train_ratio)
+    active_time = {}
     seen_users = set()
     seen_projects = set()
     skipped_projects = set()
@@ -77,8 +78,21 @@ def train_test_split(data, train_ratio):
         #     continue
         # seen_users.add(session.uid)
         # seen_projects.add(session.pid)
-        if session.start_ts < split_time:
-            train.append(session)
-        else:
-            test.append(session)
+        if session.uid not in active_time:
+            active_time[session.uid] = [np.inf, -np.inf]
+        active_time[session.uid][0] = min(active_time[session.uid][0], session.start_ts)
+        active_time[session.uid][1] = max(active_time[session.uid][1], session.start_ts)
+
+    for session in data:
+        # it's wrong!
+        # if session.uid not in seen_users and session.pid not in seen_projects and session.start_ts >= split_time:
+        #     skipped_projects.add(session.pid)
+        #     continue
+        # seen_users.add(session.uid)
+        # seen_projects.add(session.pid)
+        if active_time[session.uid][0] < split_time:
+            if session.start_ts < split_time:
+                train.append(session)
+            else:
+                test.append(session)
     return train, test

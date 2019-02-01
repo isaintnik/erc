@@ -13,8 +13,7 @@ from src.test.python.metrics import return_time_mae, item_recommendation_mae, un
     unseen_recommendation_random
 
 TOLOKA_FILENAME = "~/data/mlimlab/erc/datasets/toloka_2018_10_01_2018_11_01_salt_simple_merge"
-LASTFM_FILENAME = "~/data/mlimlab/erc/datasets/lastfm-dataset-1K/" \
-                  "userid-timestamp-artid-artname-traid-traname_100000.tsv"
+LASTFM_FILENAME = "~/data/lastfm/lastfm-dataset-1K/userid-timestamp-artid-artname-traid-traname.tsv.gz"
 
 
 def sgd_optimization(model, eval, iter_num, train_data=None):
@@ -48,19 +47,19 @@ def train(model, data, eval, dim, beta, other_project_importance, learning_rate,
     ))
 
     model_ap = model.get_applicable()
-    unseen_rec = unseen_recommendation(model_ap, data, eval, top=1)
-    print("unseen_recs:", unseen_rec)
-    unseen_rec_5 = unseen_recommendation(model_ap, data, eval, top=5)
-    print("unseen_recs@5:", unseen_rec_5)
-    unseen_rec_20 = unseen_recommendation(model_ap, data, eval, top=20)
-    print("unseen_recs@20:", unseen_rec_20)
-
-    unseen_rec_random = unseen_recommendation_random(model_ap, data, eval, top=1)
-    print("unseen_recs_random:", unseen_rec_random)
-    unseen_rec_random_5 = unseen_recommendation_random(model_ap, data, eval, top=5)
-    print("unseen_recs_random@5:", unseen_rec_random_5)
-    unseen_rec_random_20 = unseen_recommendation_random(model_ap, data, eval, top=20)
-    print("unseen_recs_random@20:", unseen_rec_random_20)
+    # unseen_rec = unseen_recommendation(model_ap, data, eval, top=1)
+    # print("unseen_recs:", unseen_rec)
+    # unseen_rec_5 = unseen_recommendation(model_ap, data, eval, top=5)
+    # print("unseen_recs@5:", unseen_rec_5)
+    # unseen_rec_20 = unseen_recommendation(model_ap, data, eval, top=20)
+    # print("unseen_recs@20:", unseen_rec_20)
+    #
+    # unseen_rec_random = unseen_recommendation_random(model_ap, data, eval, top=1)
+    # print("unseen_recs_random:", unseen_rec_random)
+    # unseen_rec_random_5 = unseen_recommendation_random(model_ap, data, eval, top=5)
+    # print("unseen_recs_random@5:", unseen_rec_random_5)
+    # unseen_rec_random_20 = unseen_recommendation_random(model_ap, data, eval, top=20)
+    # print("unseen_recs_random@20:", unseen_rec_random_20)
 
     if optimization_type == "glove":
         model.glove_like_optimisation(iter_num=iter_num, verbose=True, eval=eval)
@@ -108,7 +107,7 @@ def toloka_test():
     X = toloka_prepare_data(raw_data)
     print("Raw events num:", raw_data.shape)
     X = filter_data(X, top=top_items, users_num=users_num, projects_num=projects_num)
-    print("Users num:", len(X))
+    print("Users num:", users_num)
 
     X_tr, X_te = train_test_split(X, train_ratio)
     model = None
@@ -128,7 +127,7 @@ def lastfm_test():
     dim = 10
     beta = 0.001
     other_project_importance = 0.1
-    size = 1 * 1000 * 1000
+    size = 1 * 1000 * 100
     samples_num = 10
     train_ratio = 0.75
     users_num = 1000
@@ -232,7 +231,7 @@ if __name__ == "__main__":
     # args = argument_parser.parse_args()
 
     start_time = time.time()
-    toloka_test()
-    # lastfm_test()
+    # toloka_test()
+    lastfm_test()
     # args.func(args)
     print("time:", time.time() - start_time)

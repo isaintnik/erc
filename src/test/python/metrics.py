@@ -35,7 +35,7 @@ def item_recommendation_mae(model, events):
 
 def unseen_recommendation(model, train, test, top=1):
     will_see_projects = {}
-    all_unseen_projects = {user_id: set(model.project_embeddings.keys()) for user_id in model.user_embeddings if user_id >= 0}
+    all_unseen_projects = {user_id: set(model.project_embeddings.keys()) for user_id in model.user_embeddings if str(user_id) != "-1"}
 
     for session in test:
         if session.uid not in will_see_projects:
@@ -74,7 +74,7 @@ def unseen_recommendation(model, train, test, top=1):
 
 def unseen_recommendation_random(model, train, test, top=1):
     will_see_projects = {}
-    all_unseen_projects = {user_id: set(model.project_embeddings.keys()) for user_id in model.user_embeddings if user_id >= 0}
+    all_unseen_projects = {user_id: set(model.project_embeddings.keys()) for user_id in model.user_embeddings if str(user_id) != "-1"}
 
     for session in test:
         if session.uid not in will_see_projects:
