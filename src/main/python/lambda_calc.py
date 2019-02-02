@@ -1,6 +1,6 @@
 import numpy as np
 
-INVALID="INVALID"
+INVALID = "INVALID"
 
 DEFAULT_FOREIGN_COEFFICIENT = .3
 
@@ -112,7 +112,7 @@ class LazyRowInteractionsCalculator(InteractionCalculator):
 
 class UserLambda:
     def __init__(self, user_embedding, beta, other_project_importance, interactions_supplier,
-                 default_lambda=0.1, lambda_confidence=10, derivative=False, square=False):
+                 default_lambda=0.1, lambda_confidence=10, derivative=False):
         self.dim = len(user_embedding)
         self.beta = beta
         self.other_project_importance = other_project_importance
@@ -214,7 +214,7 @@ class UserLambda:
 
 class UserProjectLambdaManager:
     def __init__(self, user_embeddings, project_embeddings, interaction_calculator, beta, other_project_importance,
-                 default_lambda, lambda_confidence, derivative, accum=True, square=False):
+                 default_lambda, lambda_confidence, derivative, accum=True):
         self.user_embeddings = user_embeddings
         self.project_embeddings = project_embeddings
         self.interaction_calculator = interaction_calculator
@@ -224,13 +224,12 @@ class UserProjectLambdaManager:
         self.lambda_confidence=lambda_confidence
         self.derivative = derivative
         self.accum = accum
-        self.square = square
 
         self.user_lambdas = {user_id: UserLambda(user_embeddings[user_id], beta, other_project_importance,
                                                  self.interaction_calculator.get_user_supplier(user_id),
                                                  default_lambda=default_lambda,
                                                  lambda_confidence=lambda_confidence,
-                                                 derivative=derivative, square=square)
+                                                 derivative=derivative)
                              for user_id in user_embeddings.keys()}
         self.prev_user_action_time = {}
         self.accum = accum
@@ -244,11 +243,13 @@ class UserProjectLambdaManager:
 
 class UserProjectLambdaManagerLookAhead(UserProjectLambdaManager):
     def __init__(self, user_embeddings, project_embeddings, interaction_calculator, beta, other_project_importance, default_lambda,
-                 lambda_confidence, derivative, accum, square):
+                 lambda_confidence, derivative, accum=True):
         super().__init__(user_embeddings, project_embeddings, interaction_calculator, beta, other_project_importance, default_lambda,
-                         lambda_confidence, derivative, accum, square)
+                         lambda_confidence, derivative, accum)
 
     def get(self, user_id, project_id):
+        if project_id not in self.project_embeddings:
+            return self.user_embeddings[user_id] @ self.project_embeddings[INVALID].T
         return self.user_lambdas[user_id].get(project_id, accum=self.accum)
 
     def accept(self, session):
@@ -263,20 +264,17 @@ class UserProjectLambdaManagerLookAhead(UserProjectLambdaManager):
                 self.user_embeddings[session.uid] = np.copy(self.user_embeddings[INVALID])
                 self.user_lambdas[session.uid] = UserLambda(
                     self.user_embeddings[session.uid], self.beta, self.other_project_importance,
-                    self.interaction_calculator.get_user_supplier(session.uid), self.default_lambda, self.lambda_confidence,
-                    self.derivative, self.square
-                )
+                    self.interaction_calculator.get_user_supplier(session.uid), self.default_lambda,
+                    self.lambda_confidence, self.derivative)
             self.user_lambdas[session.uid].update(self.project_embeddings[session.pid], session,
                                                   session.start_ts - self.prev_user_action_time[session.uid])
-        if (session.uid == 'user_000001' and session.pid == '4Hero'):
-            print(self.get(session.uid, session.pid))
 
 
 class UserProjectLambdaManagerNotLookAhead(UserProjectLambdaManager):
     def __init__(self, user_embeddings, project_embeddings, interaction_calculator, beta, other_project_importance,
                  default_lambda, lambda_confidence, derivative, accum=True, square=False):
         super().__init__(user_embeddings, project_embeddings, interaction_calculator, beta, other_project_importance,
-                         default_lambda, lambda_confidence, derivative, accum, square)
+                         default_lambda, lambda_confidence, derivative, accum)
         self.saved_lambdas_by_project = {user_id: {pid: -1 for pid in project_embeddings.keys()} for user_id in
                                          user_embeddings.keys()}
 
@@ -292,73 +290,9 @@ class UserProjectLambdaManagerNotLookAhead(UserProjectLambdaManager):
             self.saved_lambdas_by_project[session.uid][session.pid] = self.user_lambdas[session.uid].get(session.pid,
                                                                                                  accum=self.accum)
         else:
-            # pid = session.pid if session.pid in self.project_embeddings else INVALID
             if session.pid not in self.project_embeddings:
                 self.project_embeddings[session.pid] = np.copy(self.project_embeddings[INVALID])
             self.user_lambdas[session.uid].update(self.project_embeddings[session.pid], session,
                                                   session.start_ts - self.prev_user_action_time[session.uid])
             self.saved_lambdas_by_project[session.uid][session.pid] = self.user_lambdas[session.uid].get(session.pid,
                                                                                                  accum=self.accum)
-
-
-def projects_index(history):
-    used_projects = []
-    used_projects_set = set()
-    for session in history:
-        if session.pid not in used_projects_set:
-            used_projects.append(session.pid)
-            used_projects_set.add(session.pid)
-    return np.array(used_projects)
-
-
-def reverse_projects_indices(indices):
-    return {general_ind: local_ind for local_ind, general_ind in enumerate(indices)}
-
-
-def convert_history(history, reversed_project_index):
-    project_ids = []
-    time_deltas = []
-    n_tasks = []
-    for session in history:
-        project_ids.append(reversed_project_index[session.pid])
-        time_deltas.append(session.pr_delta)
-        n_tasks.append(session.n_tasks)
-    project_ids = np.array(project_ids)
-    time_deltas = np.array(time_deltas)
-    n_tasks = np.array(n_tasks)
-    return project_ids, time_deltas, n_tasks
-
-
-def calc_lambdas(user_id, project_id, history, user_embedding, beta, interactions, projects_embeddings, dim,
-                 derivative=False):
-    upl = UserProjectLambda(user_embedding, beta, interactions.get_user_supplier(user_id), derivative=derivative)
-    lambdas = np.zeros(len(history), dtype=np.float64)
-    user_derivatives = None
-    project_derivatives = None
-    if derivative:
-        user_derivatives = np.zeros((len(history), dim), dtype=np.float64)
-        project_derivatives = np.zeros((len(history), len(projects_embeddings), dim), dtype=np.float64)
-    for i, session in enumerate(history):
-        upl.update(projects_embeddings[session.pid], session.pid, session.n_tasks, None,
-                   1 if project_id == session.pid else DEFAULT_FOREIGN_COEFFICIENT)
-        if derivative:
-            lambdas[i], user_derivatives[i], _, _ = upl.get()
-            # TODO: project derivatives
-        else:
-            lambdas[i] = upl.get()
-    if derivative:
-        return lambdas, user_derivatives, project_derivatives
-    return lambdas
-
-
-def calc_lambdas_native(project_id, project_ids, n_tasks, time_deltas, user_embedding, dim, beta, interactions,
-                        projects_embeddings, derivative=False):
-    out_lambdas = np.zeros(len(project_ids), dtype=np.float64)
-    out_user_derivatives = np.zeros((len(project_ids), len(user_embedding)), dtype=np.float64)
-    out_project_derivatives = np.zeros((len(project_ids),) + projects_embeddings.shape, dtype=np.float64)
-    # wheel.calc_lambdas(project_id, user_embedding, projects_embeddings, dim, beta, interactions, derivative,
-    #                    DEFAULT_FOREIGN_COEFFICIENT, project_ids, n_tasks, time_deltas, out_lambdas,
-    #                    out_user_derivatives, out_project_derivatives)
-    if derivative:
-        return out_lambdas, out_user_derivatives, out_project_derivatives
-    return out_lambdas

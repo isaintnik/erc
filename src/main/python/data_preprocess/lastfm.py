@@ -42,11 +42,15 @@ def lastfm_prepare_data(data):
     print("Max time delta =", np.max(data[:, 2]) - np.min(data[:, 2]))
     events = []
     last_time_done = {}
+    users_set = set()
+    projects_set = set()
     # make combination to session
     last_session = None
     pr_deltas = []
     for val in data:
         session = lastfm_raw_to_session(val, last_time_done)
+        users_set.add(session.uid)
+        projects_set.add(session.pid)
         if last_session is not None and last_session.pid == session.pid:
             continue
         events.append(session)
@@ -54,5 +58,6 @@ def lastfm_prepare_data(data):
         if session.pr_delta is not None:
             pr_deltas.append(session.pr_delta)
     pr_deltas = np.array(pr_deltas)
+    print("|Events| = {}, |users| = {}, |projects| = {}".format(len(events), len(users_set), len(projects_set)))
     print("Mean pr_delta = {}, std = {}".format(np.mean(pr_deltas), np.std(pr_deltas)))
     return events

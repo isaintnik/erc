@@ -14,7 +14,7 @@ def toloka_read_raw_data(filename, size=None):
         return raw_data if size is None else raw_data[:size]
 
 
-def toloka_raw_to_session(raw, user_to_index, project_to_index, last_time_done):
+def toloka_raw_to_session(raw, last_time_done):
     # project_id = raw[3]
     # start_ts = raw[4] / (60 * 60)
     # end_ts = raw[0] / (60 * 60)
@@ -43,16 +43,18 @@ def toloka_raw_to_session(raw, user_to_index, project_to_index, last_time_done):
 
 def toloka_prepare_data(data):
     events = []
-    user_to_index = {}
-    project_to_index = {}
+    users_set = set()
+    projects_set = set()
     last_time_done = {}
     pr_deltas = []
     for val in data:
-        session = toloka_raw_to_session(val, user_to_index, project_to_index, last_time_done)
+        session = toloka_raw_to_session(val, last_time_done)
+        users_set.add(session.uid)
+        projects_set.add(session.pid)
         events.append(session)
         if session.pr_delta is not None and not math.isnan(session.pr_delta):
             pr_deltas.append(session.pr_delta)
     pr_deltas = np.array(pr_deltas)
     print("mean pr_delta", np.mean(pr_deltas), np.std(pr_deltas))
-    print("{} events, {} users, {} projects".format(len(events), len(user_to_index), len(project_to_index)))
+    print("|Events| = {}, |users| = {}, |projects| = {}".format(len(events), len(users_set), len(projects_set)))
     return events
