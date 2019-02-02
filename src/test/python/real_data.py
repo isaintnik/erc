@@ -5,7 +5,7 @@ import time
 
 import numpy as np
 
-from src.main.python.model import Model2Lambda, ModelExpLambda
+from src.main.python.model import Model, Model2Lambda, ModelExpLambda, ModelDensity
 from src.main.python.data_preprocess.toloka import toloka_read_raw_data, toloka_prepare_data
 from src.main.python.data_preprocess.lastfm import lastfm_read_raw_data, lastfm_prepare_data
 from src.main.python.data_preprocess.common import filter_data, train_test_split
@@ -39,7 +39,7 @@ def train(model, data, eval, dim, beta, other_project_importance, learning_rate,
         except FileNotFoundError:
             print('Model not found, a new one was created')
     if model is None and not loaded:
-        model = Model2Lambda(data, dim, learning_rate=learning_rate, eps=1, beta=beta,
+        model = ModelDensity(data, dim, learning_rate=learning_rate, eps=1, beta=beta,
                              other_project_importance=other_project_importance)
 
     print("start ll = {}, return_time = {}, recommendation_mae = {}".format(
@@ -51,9 +51,9 @@ def train(model, data, eval, dim, beta, other_project_importance, learning_rate,
     for top in [1, 5]:
         unseen_rec = unseen_recommendation(model.get_applicable(), data, eval, top=top)
         print("unseen_recs@{}: {}".format(str(top), unseen_rec))
-    for top in [1, 5]:
-        unseen_rec = unseen_recommendation_random(model.get_applicable(), data, eval, top=top)
-        print("unseen_recs_random@{}: {}".format(str(top), unseen_rec))
+    # for top in [1, 5]:
+    #     unseen_rec = unseen_recommendation_random(model.get_applicable(), data, eval, top=top)
+    #     print("unseen_recs_random@{}: {}".format(str(top), unseen_rec))
 
     if optimization_type == "glove":
         model.glove_like_optimisation(iter_num=iter_num, verbose=True, eval=eval)
@@ -86,8 +86,6 @@ def toloka_test():
     dim = 5
     beta = 0.001
     other_project_importance = 0.1
-    # learning_rate = 1.5
-    # iter_num = 2
     size = 1000 * 1000
     samples_num = 10
     train_ratio = 0.75
@@ -120,7 +118,7 @@ def lastfm_test():
     dim = 10
     beta = 0.001
     other_project_importance = 0.1
-    size = 1 * 1000 * 1000
+    size = 1 * 100 * 1000
     samples_num = 10
     train_ratio = 0.75
     users_num = 1000
@@ -142,7 +140,7 @@ def lastfm_test():
     # model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate, iter_num=2,
     #               optimization_type="glove", model_path_in=model_path_in, model_path_out=model_path_out)
 
-    learning_rate = 0.005
+    learning_rate = 20
     model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate=learning_rate, iter_num=50,
                   optimization_type="sgd", model_path_in=model_path_in, model_path_out=model_path_out)
 
