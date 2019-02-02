@@ -13,14 +13,15 @@ from src.test.python.metrics import return_time_mae, item_recommendation_mae, un
     unseen_recommendation_random
 
 TOLOKA_FILENAME = "~/data/mlimlab/erc/datasets/toloka_2018_10_01_2018_11_01_salt_simple_merge"
-LASTFM_FILENAME = "~/data/lastfm/lastfm-dataset-1K/userid-timestamp-artid-artname-traid-traname.tsv.gz"
+LASTFM_FILENAME = "~/data/mlimlab/erc/datasets/lastfm-dataset-1K/" \
+                  "userid-timestamp-artid-artname-traid-traname_1M.tsv"
 
 
 def sgd_optimization(model, eval, iter_num, train_data=None):
     for i in range(iter_num):
         model.optimization_step()
         print("{}-th iter, ll = {}".format(i, model.log_likelihood()))
-        print_metrics(model.get_applicable(), eval, X_tr=train_data, samples_num=10)
+        print_metrics(model, eval, X_tr=train_data, samples_num=10)
         print()
     # print(interaction_matrix(model.user_embeddings, model.project_embeddings))
     # print(np.mean(interaction_matrix(model.user_embeddings, model.project_embeddings)))
@@ -41,25 +42,18 @@ def train(model, data, eval, dim, beta, other_project_importance, learning_rate,
         model = Model2Lambda(data, dim, learning_rate=learning_rate, eps=1, beta=beta,
                              other_project_importance=other_project_importance)
 
-    print("start ll = {}, return_time = {}".format(
+    print("start ll = {}, return_time = {}, recommendation_mae = {}".format(
         model.log_likelihood(),
-        return_time_mae(model.get_applicable(), eval, samples_num=10)
+        return_time_mae(model.get_applicable(), eval, samples_num=10),
+        item_recommendation_mae(model.get_applicable(), eval)
     ))
 
-    model_ap = model.get_applicable()
-    # unseen_rec = unseen_recommendation(model_ap, data, eval, top=1)
-    # print("unseen_recs:", unseen_rec)
-    # unseen_rec_5 = unseen_recommendation(model_ap, data, eval, top=5)
-    # print("unseen_recs@5:", unseen_rec_5)
-    # unseen_rec_20 = unseen_recommendation(model_ap, data, eval, top=20)
-    # print("unseen_recs@20:", unseen_rec_20)
-    #
-    # unseen_rec_random = unseen_recommendation_random(model_ap, data, eval, top=1)
-    # print("unseen_recs_random:", unseen_rec_random)
-    # unseen_rec_random_5 = unseen_recommendation_random(model_ap, data, eval, top=5)
-    # print("unseen_recs_random@5:", unseen_rec_random_5)
-    # unseen_rec_random_20 = unseen_recommendation_random(model_ap, data, eval, top=20)
-    # print("unseen_recs_random@20:", unseen_rec_random_20)
+    for top in [1, 5]:
+        unseen_rec = unseen_recommendation(model.get_applicable(), data, eval, top=top)
+        print("unseen_recs@{}: {}".format(str(top), unseen_rec))
+    for top in [1, 5]:
+        unseen_rec = unseen_recommendation_random(model.get_applicable(), data, eval, top=top)
+        print("unseen_recs_random@{}: {}".format(str(top), unseen_rec))
 
     if optimization_type == "glove":
         model.glove_like_optimisation(iter_num=iter_num, verbose=True, eval=eval)
@@ -76,12 +70,12 @@ def train(model, data, eval, dim, beta, other_project_importance, learning_rate,
     return model
 
 
-def print_metrics(model_application, X_te, X_tr=None, samples_num=10):
-    return_time = return_time_mae(model_application, X_te, samples_num=samples_num)
-    recommend_mae = item_recommendation_mae(model_application, X_te)
+def print_metrics(model, X_te, X_tr=None, samples_num=10):
+    return_time = return_time_mae(model.get_applicable(), X_te, samples_num=samples_num)
+    recommend_mae = item_recommendation_mae(model.get_applicable(), X_te)
     if X_tr is not None:
-        unseen_rec = unseen_recommendation(model_application, X_tr, X_te, top=1)
-        unseen_rec_5 = unseen_recommendation(model_application, X_tr, X_te, top=5)
+        unseen_rec = unseen_recommendation(model.get_applicable(), X_tr, X_te, top=1)
+        unseen_rec_5 = unseen_recommendation(model.get_applicable(), X_tr, X_te, top=5)
         print("return_time = {}, recommendation_mae = {}, unseen_rec = {}, unseen_rec@5 = {}".format(
             return_time, recommend_mae, unseen_rec, unseen_rec_5))
     else:
@@ -94,7 +88,7 @@ def toloka_test():
     other_project_importance = 0.1
     # learning_rate = 1.5
     # iter_num = 2
-    size = 100 * 1000
+    size = 1000 * 1000
     samples_num = 10
     train_ratio = 0.75
     users_num = None
@@ -107,7 +101,6 @@ def toloka_test():
     X = toloka_prepare_data(raw_data)
     print("Raw events num:", raw_data.shape)
     X = filter_data(X, top=top_items, users_num=users_num, projects_num=projects_num)
-    print("Users num:", users_num)
 
     X_tr, X_te = train_test_split(X, train_ratio)
     model = None
@@ -120,14 +113,14 @@ def toloka_test():
     model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate=learning_rate, iter_num=5,
                   optimization_type="sgd", model_path_in=model_path_in, model_path_out=model_path_out)
 
-    print_metrics(model.get_applicable(), X_te, X_tr=X_tr, samples_num=samples_num)
+    print_metrics(model, X_te, X_tr=X_tr, samples_num=samples_num)
 
 
 def lastfm_test():
     dim = 10
     beta = 0.001
     other_project_importance = 0.1
-    size = 1 * 1000 * 100
+    size = 1 * 1000 * 1000
     samples_num = 10
     train_ratio = 0.75
     users_num = 1000
@@ -153,7 +146,7 @@ def lastfm_test():
     model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate=learning_rate, iter_num=50,
                   optimization_type="sgd", model_path_in=model_path_in, model_path_out=model_path_out)
 
-    print_metrics(model.get_applicable(), X_te, X_tr=X_tr, samples_num=samples_num)
+    print_metrics(model, X_te, X_tr=X_tr, samples_num=samples_num)
 
 
 def prepare_lastfm_data(filename, size=50000, train_ratio=0.75):

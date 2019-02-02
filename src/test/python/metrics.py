@@ -11,7 +11,7 @@ def return_time_mae(model, events, samples_num=10):
             expected_return_time = model.time_delta(session.uid, session.pid, samples_num)
             # expected_return_time = 0
             errors += abs(expected_return_time - session.pr_delta)
-        model.accept(session)
+            model.accept(session)
     return errors / count
 
 
@@ -57,7 +57,7 @@ def unseen_recommendation(model, train, test, top=1):
         if session.uid not in model.user_embeddings or session.pid not in model.project_embeddings:
             skipped += 1
             continue
-        project_lambdas = [(model.user_embeddings[session.uid] @ model.project_embeddings[pid].T, pid)
+        project_lambdas = [(model.get_lambda(session.uid, pid), pid)
                            for pid in all_unseen_projects[session.uid]]
         top_projects = [pid for l, pid in sorted(project_lambdas, reverse=True)][:top]
         ok = False
@@ -68,6 +68,7 @@ def unseen_recommendation(model, train, test, top=1):
         if ok:
             match += 1
         will_see_projects[session.uid].discard(session.pid)
+        model.accept(session)
     # print("top = {}, count = {}, skipped = {}".format(top, count, skipped))
     return match / (count - skipped)
 
@@ -110,4 +111,5 @@ def unseen_recommendation_random(model, train, test, top=1):
         if ok:
             match += 1
         will_see_projects[session.uid].discard(session.pid)
+        model.accept(session)
     return match / (count - skipped)

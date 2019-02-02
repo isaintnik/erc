@@ -25,18 +25,20 @@ def toloka_raw_to_session(raw, user_to_index, project_to_index, last_time_done):
     project_id = raw[0]
     start_ts = int(raw[1]) / (60 * 60)
     user_id = raw[2]
-    if project_id not in project_to_index:
-        project_to_index[project_id] = len(project_to_index)
-    if user_id not in user_to_index:
-        user_to_index[user_id] = len(user_to_index)
-        last_time_done[user_to_index[user_id]] = {}
+    # if project_id not in project_to_index:
+    #     project_to_index[project_id] = len(project_to_index)
+    # if user_id not in user_to_index:
+    #     user_to_index[user_id] = len(user_to_index)
+    #     last_time_done[user_to_index[user_id]] = {}
+    if user_id not in last_time_done:
+        last_time_done[user_id] = {}
 
     end_ts = None
-    pr_delta = None if project_to_index[project_id] not in last_time_done[user_to_index[user_id]] \
-        else (start_ts - last_time_done[user_to_index[user_id]][project_to_index[project_id]])
+    pr_delta = None if project_id not in last_time_done[user_id] \
+        else (start_ts - last_time_done[user_id][project_id])
     n_tasks = 1
-    last_time_done[user_to_index[user_id]][project_to_index[project_id]] = start_ts
-    return USession(user_to_index[user_id], project_to_index[project_id], start_ts, end_ts, pr_delta, n_tasks)
+    last_time_done[user_id][project_id] = start_ts
+    return USession(user_id, project_id, start_ts, end_ts, pr_delta, n_tasks)
 
 
 def toloka_prepare_data(data):

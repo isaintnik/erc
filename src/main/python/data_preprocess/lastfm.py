@@ -7,13 +7,13 @@ from src.main.python.model import USession
 
 
 def lastfm_read_raw_data(filename, size=None):
-    return pd.read_csv(filename, sep='\t', error_bad_lines=False, compression='gzip', nrows=size).values
+    return pd.read_csv(filename, sep='\t', error_bad_lines=False, nrows=size).values
 
 
 def lastfm_raw_to_session(raw, last_time_done):
-    user_id = raw[0]
-    ts = raw[1]
-    project_id = raw[3]
+    user_id = raw[1]
+    ts = raw[2]
+    project_id = raw[4]
     if user_id not in last_time_done:
         last_time_done[user_id] = {}
 
@@ -37,9 +37,9 @@ def lastfm_make_sessions(users_history):
 
 
 def lastfm_prepare_data(data):
-    data[:, 1] = np.array(list(map(lambda x: time.mktime(time.strptime(x, "%Y-%m-%dT%H:%M:%SZ")), data[:, 1])))
-    data = data[np.argsort(data[:, 1])]
-    print("Max time delta =", np.max(data[:, 1]) - np.min(data[:, 1]))
+    data[:, 2] = np.array(list(map(lambda x: time.mktime(time.strptime(x, "%Y-%m-%dT%H:%M:%SZ")), data[:, 2])))
+    data = data[np.argsort(data[:, 2])]
+    print("Max time delta =", np.max(data[:, 2]) - np.min(data[:, 2]))
     events = []
     last_time_done = {}
     # make combination to session
