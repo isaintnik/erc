@@ -6,7 +6,7 @@ import numpy as np
 
 from src.main.python.lambda_calc import UserLambda, LazyInteractionsCalculator, SimpleInteractionsCalculator, \
     UserProjectLambdaManagerLookAhead, UserProjectLambdaManagerNotLookAhead, INVALID
-from src.test.python.metrics import return_time_mae, item_recommendation_mae
+from src.test.python.metrics import return_time_mae, item_recommendation_mae, unseen_recommendation
 
 
 class USession:
@@ -23,10 +23,16 @@ class USession:
 # USession = namedtuple('USession', 'uid pid start_ts end_ts pr_delta n_tasks')
 
 
-def print_metrics(model_application, X_te, samples_num=10):
-    return_time = return_time_mae(model_application, X_te, samples_num=samples_num)
-    recommend_mae = item_recommendation_mae(model_application, X_te)
-    print("return_time = {}, recommendation_mae = {}".format(return_time, recommend_mae))
+def print_metrics(model, X_te, X_tr=None, samples_num=10):
+    return_time = return_time_mae(model.get_applicable(), X_te, samples_num=samples_num)
+    recommend_mae = item_recommendation_mae(model.get_applicable(), X_te)
+    if X_tr is not None:
+        unseen_rec = unseen_recommendation(model.get_applicable(), X_tr, X_te, top=1)
+        unseen_rec_5 = unseen_recommendation(model.get_applicable(), X_tr, X_te, top=5)
+        print("return_time = {}, recommendation_mae = {}, unseen_rec = {}, unseen_rec@5 = {}".format(
+            return_time, recommend_mae, unseen_rec, unseen_rec_5))
+    else:
+        print("return_time = {}, recommendation_mae = {}".format(return_time, recommend_mae))
 
 
 class Model:
@@ -232,15 +238,22 @@ class Model:
         return ApplicableModel(self.user_embeddings, self.project_embeddings, self.beta, self.other_project_importance,
                                self.default_lambda, lambda_transform=self.lambda_transform).fit(self.events)
 
-    def optimization_step(self):
-        users_derivatives, project_derivatives = self.ll_derivative()
-        lr = self.learning_rate / self.data_size
-        for user_id in self.user_ids:
-            self.user_embeddings[user_id] += users_derivatives[user_id] * lr
-        for project_id in self.project_ids:
-            self.project_embeddings[project_id] += project_derivatives[project_id] * lr
-        self.learning_rate *= self.decay_rate
-        self._update_default_embeddings()
+    def sgd_optimization(self, learning_rate, iter_num, eval, verbose=True):
+        for i in range(iter_num):
+            users_derivatives, project_derivatives = self.ll_derivative()
+            lr = learning_rate / self.data_size
+            for user_id in self.user_ids:
+                self.user_embeddings[user_id] += users_derivatives[user_id] * lr
+            for project_id in self.project_ids:
+                self.project_embeddings[project_id] += project_derivatives[project_id] * lr
+            self.learning_rate *= self.decay_rate
+            self._update_default_embeddings()
+
+            if verbose:
+                print("{}-th iter, ll = {}".format(i, self.log_likelihood()))
+                if eval is not None:
+                    print_metrics(self, eval, X_tr=self.events, samples_num=10)
+                print()
 
     def _update_default_embeddings(self):
         mean_user = np.zeros_like(next(iter(self.user_embeddings.values())))
@@ -265,8 +278,8 @@ class ModelExpLambda(Model):
     def __init__(self, users_histories, dim, learning_rate=0.01, beta=0.01, eps=3600, other_project_importance=0.5,
                  users_embeddings_prior=None, projects_embeddings_prior=None):
         Model.__init__(self, users_histories, dim, learning_rate, beta, eps, other_project_importance,
-                       users_embeddings_prior, projects_embeddings_prior, lambda_transform=lambda x: np.exp(x),
-                       lambda_derivative=lambda x: np.exp(x))
+                       users_embeddings_prior, projects_embeddings_prior, lambda_transform=lambda x: 1 * np.exp(x),
+                       lambda_derivative=lambda x: 1 * np.exp(x))
 
 
 class ApplicableModel:
@@ -388,9 +401,7 @@ class ModelDensity:
         tr_lam = self.lambda_transform(lam)
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            ans = np.log(tr_lam * np.exp(-tr_lam * (session.start_ts - self.min_time)))
-            # ans = np.log(-np.exp(-tr_lam * (session.pr_delta + self.eps)) +
-            #              np.exp(-tr_lam * max(0, session.pr_delta - self.eps)))
+            ans = np.log(tr_lam * np.exp(-tr_lam * (session.pr_delta)))
             if w and w[0].category == RuntimeWarning:
                 ans = 0
                 warnings.warn("in ll", RuntimeWarning)
@@ -403,8 +414,7 @@ class ModelDensity:
             warnings.simplefilter("always")
             tr_lam = self.lambda_transform(lam)
             der_lam = self.lambda_derivative(lam)
-            t = session.start_ts - self.min_time
-            cur_ll_d = der_lam * np.exp(-tr_lam * t) * (1 - tr_lam * t) / tr_lam
+            cur_ll_d = der_lam * np.exp(-tr_lam * session.pr_delta) * (1 - tr_lam * session.pr_delta) / tr_lam
             if w and w[0].category == RuntimeWarning:
                 cur_ll_d = 0
                 warnings.warn("in derivative", RuntimeWarning)
@@ -419,29 +429,22 @@ class ModelDensity:
         return ApplicableModel(self.user_embeddings, self.project_embeddings, self.beta, self.other_project_importance,
                                self.default_lambda, lambda_transform=self.lambda_transform).fit(self.events)
 
-    def optimization_step(self):
-        users_derivatives, project_derivatives = self.ll_derivative()
-        lr = self.learning_rate / self.data_size
+    def sgd_optimization(self, learning_rate, iter_num, eval, verbose=True):
+        for i in range(iter_num):
+            users_derivatives, project_derivatives = self.ll_derivative()
+            lr = learning_rate / self.data_size
+            for user_id in self.user_ids:
+                self.user_embeddings[user_id] += users_derivatives[user_id] * lr
+            for project_id in self.project_ids:
+                self.project_embeddings[project_id] += project_derivatives[project_id] * lr
+            self.learning_rate *= self.decay_rate
+            self._update_default_embeddings()
 
-        both_signs_users_derivative_count = 0
-        both_signs_projects_derivative_count = 0
-        for user_id in self.user_ids:
-            if np.any(users_derivatives[user_id] < 0) and np.any(users_derivatives[user_id] > 0):
-                both_signs_users_derivative_count += 1
-        for project_id in self.project_ids:
-            if np.any(project_derivatives[project_id] < 0) and np.any(project_derivatives[project_id] > 0):
-                both_signs_projects_derivative_count += 1
-        print("both_signs_derivative_rate for users {}, projects {}"
-              .format(both_signs_users_derivative_count / len(self.user_ids),
-                      both_signs_projects_derivative_count / len(self.project_ids)))
-
-        for user_id in self.user_ids:
-            self.user_embeddings[user_id] -= users_derivatives[user_id] * lr
-        for project_id in self.project_ids:
-            self.project_embeddings[project_id] -= project_derivatives[project_id] * lr
-
-        self.learning_rate *= self.decay_rate
-        self._update_default_embeddings()
+            if verbose:
+                print("{}-th iter, ll = {}".format(i, self.log_likelihood()))
+                if eval is not None:
+                    print_metrics(self, eval, X_tr=self.events, samples_num=10)
+                print()
 
     def _update_default_embeddings(self):
         mean_user = np.zeros_like(next(iter(self.user_embeddings.values())))

@@ -10,8 +10,7 @@ def toloka_read_raw_data(filename, size=None):
     raw_datas = pd.read_json(filename, lines=True, chunksize=size)
     for raw_data in raw_datas:
         print("original data shape", raw_data.shape)
-        raw_data = raw_data.values
-        return raw_data if size is None else raw_data[:size]
+        return raw_data.values
 
 
 def toloka_raw_to_session(raw, last_time_done):
@@ -56,5 +55,5 @@ def toloka_prepare_data(data):
             pr_deltas.append(session.pr_delta)
     pr_deltas = np.array(pr_deltas)
     print("mean pr_delta", np.mean(pr_deltas), np.std(pr_deltas))
-    print("|Events| = {}, |users| = {}, |projects| = {}".format(len(events), len(users_set), len(projects_set)))
+    print("Read |Events| = {}, |users| = {}, |projects| = {}".format(len(events), len(users_set), len(projects_set)))
     return events

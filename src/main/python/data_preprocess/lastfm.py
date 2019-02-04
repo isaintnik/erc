@@ -58,6 +58,6 @@ def lastfm_prepare_data(data):
         if session.pr_delta is not None:
             pr_deltas.append(session.pr_delta)
     pr_deltas = np.array(pr_deltas)
-    print("|Events| = {}, |users| = {}, |projects| = {}".format(len(events), len(users_set), len(projects_set)))
+    print("Read |Events| = {}, |users| = {}, |projects| = {}".format(len(events), len(users_set), len(projects_set)))
     print("Mean pr_delta = {}, std = {}".format(np.mean(pr_deltas), np.std(pr_deltas)))
     return events

@@ -17,16 +17,6 @@ LASTFM_FILENAME = "~/data/mlimlab/erc/datasets/lastfm-dataset-1K/" \
                   "userid-timestamp-artid-artname-traid-traname_1M.tsv"
 
 
-def sgd_optimization(model, eval, iter_num, train_data=None):
-    for i in range(iter_num):
-        model.optimization_step()
-        print("{}-th iter, ll = {}".format(i, model.log_likelihood()))
-        print_metrics(model, eval, X_tr=train_data, samples_num=10)
-        print()
-    # print(interaction_matrix(model.user_embeddings, model.project_embeddings))
-    # print(np.mean(interaction_matrix(model.user_embeddings, model.project_embeddings)))
-
-
 def train(model, data, eval, dim, beta, other_project_importance, learning_rate, iter_num, optimization_type="sgd",
           model_path_in=None, model_path_out=None):
     loaded = False
@@ -39,8 +29,9 @@ def train(model, data, eval, dim, beta, other_project_importance, learning_rate,
         except FileNotFoundError:
             print('Model not found, a new one was created')
     if model is None and not loaded:
-        model = ModelDensity(data, dim, learning_rate=learning_rate, eps=1, beta=beta,
-                             other_project_importance=other_project_importance)
+        raise KeyError("model")
+        # model = ModelDensity(data, dim, learning_rate=learning_rate, eps=1, beta=beta,
+        #                      other_project_importance=other_project_importance)
 
     print("start ll = {}, return_time = {}, recommendation_mae = {}".format(
         model.log_likelihood(),
@@ -56,9 +47,9 @@ def train(model, data, eval, dim, beta, other_project_importance, learning_rate,
     #     print("unseen_recs_random@{}: {}".format(str(top), unseen_rec))
 
     if optimization_type == "glove":
-        model.glove_like_optimisation(iter_num=iter_num, verbose=True, eval=eval)
+        model.glove_like_optimisation(iter_num, verbose=True, eval=eval)
     elif optimization_type == "sgd":
-        sgd_optimization(model, eval, iter_num, train_data=data)
+        model.sgd_optimization(learning_rate, iter_num, eval=eval, verbose=True)
 
     if model_path_out is not None:
         try:
@@ -83,35 +74,38 @@ def print_metrics(model, X_te, X_tr=None, samples_num=10):
 
 
 def toloka_test():
-    dim = 5
+    dim = 10
     beta = 0.001
     other_project_importance = 0.1
-    size = 1000 * 1000
+    size = 5000 * 1000
     samples_num = 10
     train_ratio = 0.75
-    users_num = None
+    users_num = 500
     projects_num = None
-    top_items = False
+    top_items = True
     model_path_in = None
-    model_path_out = "saved_models/toloka_rand.model"
+    model_path_out = None  # "saved_models/toloka_rand.model"
 
     raw_data = toloka_read_raw_data(TOLOKA_FILENAME, size)
     X = toloka_prepare_data(raw_data)
     print("Raw events num:", raw_data.shape)
     X = filter_data(X, top=top_items, users_num=users_num, projects_num=projects_num)
+    print("Events after filter", len(X))
 
     X_tr, X_te = train_test_split(X, train_ratio)
-    model = None
+    model = ModelExpLambda(X_tr, dim, eps=1, beta=beta,
+                         other_project_importance=other_project_importance)
+    learning_rate = 3
+    print("Params: dim={}, size={}, users_num={}, projects_num={}, lr={}"
+          .format(dim, size, users_num, projects_num, learning_rate))
+    train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate=learning_rate, iter_num=5,
+                  optimization_type="sgd", model_path_in=model_path_in, model_path_out=model_path_out)
 
     # learning_rate = 0.001
     # model = train(None, X_tr, X_te, dim, beta, other_project_importance, learning_rate, iter_num=2,
     #               optimization_type="glove", model_path_in=model_path_in, model_path_out=model_path_out)
 
-    learning_rate = 1.
-    model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate=learning_rate, iter_num=5,
-                  optimization_type="sgd", model_path_in=model_path_in, model_path_out=model_path_out)
-
-    print_metrics(model, X_te, X_tr=X_tr, samples_num=samples_num)
+    # print_metrics(model, X_te, X_tr=X_tr, samples_num=samples_num)
 
 
 def lastfm_test():
@@ -144,7 +138,7 @@ def lastfm_test():
     model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate=learning_rate, iter_num=50,
                   optimization_type="sgd", model_path_in=model_path_in, model_path_out=model_path_out)
 
-    print_metrics(model, X_te, X_tr=X_tr, samples_num=samples_num)
+    # print_metrics(model, X_te, X_tr=X_tr, samples_num=samples_num)
 
 
 def prepare_lastfm_data(filename, size=50000, train_ratio=0.75):
@@ -222,7 +216,7 @@ if __name__ == "__main__":
     # args = argument_parser.parse_args()
 
     start_time = time.time()
-    # toloka_test()
-    lastfm_test()
+    toloka_test()
+    # lastfm_test()
     # args.func(args)
     print("time:", time.time() - start_time)
