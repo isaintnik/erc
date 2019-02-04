@@ -11,10 +11,10 @@ def interaction_matrix(users, projects):
 
 def top_data(data, key):
     count_stat = {}
-    for session in data:
-        if key(session) not in count_stat:
-            count_stat[key(session)] = 0
-        count_stat[key(session)] += 1
+    for event in data:
+        if key(event) not in count_stat:
+            count_stat[key(event)] = 0
+        count_stat[key(event)] += 1
     count_stat = list(count_stat.items())
     count_stat = sorted(count_stat, key=lambda x: -x[1])
     return [key for key, value in count_stat]
@@ -22,8 +22,8 @@ def top_data(data, key):
 
 def random_data(data, key):
     count_stat = set()
-    for session in data:
-        count_stat.add(key(session))
+    for event in data:
+        count_stat.add(key(event))
     count_stat = list(count_stat)
     random.shuffle(count_stat)
     return count_stat
@@ -44,11 +44,11 @@ def filter_data(data, top=False, users_num=None, projects_num=None):
     new_data = []
     new_users = set()
     new_projects = set()
-    for session in data:
-        if session.uid in selected_users and session.pid in selected_projects:
-            new_data.append(session)
-            new_users.add(session.uid)
-            new_projects.add(session.pid)
+    for event in data:
+        if event.uid in selected_users and event.pid in selected_projects:
+            new_data.append(event)
+            new_users.add(event.uid)
+            new_projects.add(event.pid)
     print("After filtering: |Events| = {}, |users| = {}, |projects| = {}".format(len(new_data), len(new_users),
                                                                                  len(new_projects)))
     return new_data
@@ -56,8 +56,8 @@ def filter_data(data, top=False, users_num=None, projects_num=None):
 
 def get_split_time(data, train_ratio):
     start_times = []
-    for session in data:
-        start_times.append(session.start_ts)
+    for event in data:
+        start_times.append(event.start_ts)
     return np.percentile(np.array(start_times), train_ratio * 100)
 
 
@@ -69,28 +69,28 @@ def train_test_split(data, train_ratio):
     seen_users = set()
     seen_projects = set()
     skipped_projects = set()
-    for session in data:
+    for event in data:
         # it's wrong!
-        # if session.uid not in seen_users and session.pid not in seen_projects and session.start_ts >= split_time:
-        #     skipped_projects.add(session.pid)
+        # if event.uid not in seen_users and event.pid not in seen_projects and event.start_ts >= split_time:
+        #     skipped_projects.add(event.pid)
         #     continue
-        # seen_users.add(session.uid)
-        # seen_projects.add(session.pid)
-        if session.uid not in active_time:
-            active_time[session.uid] = [np.inf, -np.inf]
-        active_time[session.uid][0] = min(active_time[session.uid][0], session.start_ts)
-        active_time[session.uid][1] = max(active_time[session.uid][1], session.start_ts)
+        # seen_users.add(event.uid)
+        # seen_projects.add(event.pid)
+        if event.uid not in active_time:
+            active_time[event.uid] = [np.inf, -np.inf]
+        active_time[event.uid][0] = min(active_time[event.uid][0], event.start_ts)
+        active_time[event.uid][1] = max(active_time[event.uid][1], event.start_ts)
 
-    for session in data:
+    for event in data:
         # it's wrong!
-        # if session.uid not in seen_users and session.pid not in seen_projects and session.start_ts >= split_time:
-        #     skipped_projects.add(session.pid)
+        # if event.uid not in seen_users and event.pid not in seen_projects and event.start_ts >= split_time:
+        #     skipped_projects.add(event.pid)
         #     continue
-        # seen_users.add(session.uid)
-        # seen_projects.add(session.pid)
-        if active_time[session.uid][0] < split_time:
-            if session.start_ts < split_time:
-                train.append(session)
+        # seen_users.add(event.uid)
+        # seen_projects.add(event.pid)
+        if active_time[event.uid][0] < split_time:
+            if event.start_ts < split_time:
+                train.append(event)
             else:
-                test.append(session)
+                test.append(event)
     return train, test

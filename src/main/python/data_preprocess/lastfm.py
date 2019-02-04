@@ -3,7 +3,7 @@ import time
 import numpy as np
 import pandas as pd
 
-from src.main.python.model import USession
+from src.main.python.model import Event
 
 
 def lastfm_read_raw_data(filename, size=None):
@@ -18,12 +18,11 @@ def lastfm_raw_to_session(raw, last_time_done):
         last_time_done[user_id] = {}
 
     start_ts = ts / (60 * 60)
-    end_ts = 0  # don't used
     pr_delta = None if project_id not in last_time_done[user_id] \
         else (ts - last_time_done[user_id][project_id]) / (60 * 60)
     n_tasks = 1
     last_time_done[user_id][project_id] = ts
-    return USession(user_id, project_id, start_ts, end_ts, pr_delta, n_tasks)
+    return Event(user_id, project_id, start_ts, pr_delta, n_tasks)
 
 
 def lastfm_make_sessions(users_history):

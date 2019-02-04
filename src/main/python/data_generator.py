@@ -1,5 +1,5 @@
 import numpy as np
-from src.main.python.model import ApplicableModel, USession
+from src.main.python.model import ApplicableModel, Event
 
 USER_IDX = 0
 TS_START_IDX = 1
@@ -92,7 +92,7 @@ class StepGenerator:
             last_time_done[pid] = ts_end
             current_ts = ts_end
 
-            user_session = USession(pid, ts_start, ts_end, inner_delta, n_tasks)
+            user_session = Event(pid, ts_start, ts_end, inner_delta, n_tasks)
             if self.verbose:
                 print("3.", user_session)
                 print(np.exp(-self.beta * (ts_end - latest_done_project_ts)))
@@ -104,7 +104,7 @@ class StepGenerator:
                 print()
 
         for pid in last_time_done.keys():
-            user_session = USession(pid, self.max_lifetime, self.max_lifetime + 1, self.max_lifetime - last_time_done[pid], 0)
+            user_session = Event(pid, self.max_lifetime, self.max_lifetime + 1, self.max_lifetime - last_time_done[pid], 0)
             generation_summary.append(user_session)
 
         if self.verbose:
