@@ -13,7 +13,7 @@ Event = namedtuple('Event', 'uid pid start_ts pr_delta n_tasks')
 
 
 class Model:
-    def __init__(self, dim, beta=0.001, eps=1, other_project_importance=0.3,
+    def __init__(self, dim, beta=0.001, eps=1, other_project_importance=0.1,
                  users_embeddings_prior=None, projects_embeddings_prior=None, lambda_transform=lambda x: x ** 2,
                  lambda_derivative=lambda x: 2 * x):
         self.emb_dim = dim
@@ -89,7 +89,7 @@ class Model:
             if event.n_tasks != 0:
                 if derivative:
                     self._update_event_derivative(event, lambdas_by_project, users_derivatives,
-                                                    project_derivatives)
+                                                  project_derivatives)
                 else:
                     ll += self._event_likelihood(event, lambdas_by_project)
                 lambdas_by_project.accept(event)
@@ -143,7 +143,7 @@ class Model:
                 print()
 
     def _update_glove_event_params(self, event, lambdas_by_project, users_diffs_squares,
-                                     projects_diffs_squares, discount_decay, lr):
+                                   projects_diffs_squares, discount_decay, lr):
         lam, lam_user_d, lam_projects_d = lambdas_by_project.get(event.uid, event.pid)
         # lam, lam_user_d, lam_projects_d = user_lambda.get(user_event.pid, accum=False)
         tr_lam = lam ** 2

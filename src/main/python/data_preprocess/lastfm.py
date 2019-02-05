@@ -25,16 +25,6 @@ def lastfm_raw_to_session(raw, last_time_done):
     return Event(user_id, project_id, start_ts, pr_delta, n_tasks)
 
 
-def lastfm_make_sessions(users_history):
-    new_history = {}
-    for user_id, user_history in users_history.items():
-        new_history[user_id] = []
-        prev_session = None
-        for i, session in enumerate(user_history):
-            if prev_session is None or prev_session.pid == session.pid:
-                pass
-
-
 def lastfm_prepare_data(data):
     data[:, 2] = np.array(list(map(lambda x: time.mktime(time.strptime(x, "%Y-%m-%dT%H:%M:%SZ")), data[:, 2])))
     data = data[np.argsort(data[:, 2])]
