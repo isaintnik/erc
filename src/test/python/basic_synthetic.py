@@ -3,15 +3,6 @@ from src.main.python.model import Model, ModelDensity, INVALID
 from src.main.python.data_generator import *
 
 
-def generate_synthetic():
-    return [
-        [Event(0, 10, 15, None, 10), Event(1, 16, 18, None, 5),
-         Event(2, 25, 30, None, 10), Event(1, 36, 38, 20, 3), Event(1, 44, 49, 6, 7)],
-        [Event(2, 10, 16, None, 8), Event(0, 20, 28, None, 16),
-         Event(2, 36, 40, 10, 8), Event(2, 48, 60, 50, 24)]
-    ]
-
-
 def generate_vectors(users_num, projects_num, dim, mean=0.5, std_dev=0.2):
     return {user_id: np.random.normal(mean, std_dev, dim) for user_id in range(users_num)}, \
            {project_id: np.random.normal(mean, std_dev, dim) for project_id in range(projects_num)}
@@ -131,13 +122,16 @@ def init_compare_test():
     beta = 0.001
     eps = 1
     other_project_importance = 0.0
-    lambda_transform = lambda x: np.exp(x)
-    lambda_derivative = lambda x: np.exp(x)
-    learning_rate = 5
-    user_embedding, project_embeddings = generate_vectors(users_num, projects_num, dim, mean=0.01, std_dev=0.01)
-    users_init, projects_init = generate_vectors(users_num, projects_num, dim, mean=0.03, std_dev=0.02)
+    embedding_mean = 0.1
+    default_lambda = embedding_mean ** 2
+    lambda_transform = lambda x: 0.01 * np.exp(x)
+    lambda_derivative = lambda x: 0.01 * np.exp(x)
+    learning_rate = 2
+    inner_iter_num = 3
+    user_embedding, project_embeddings = generate_vectors(users_num, projects_num, dim, mean=embedding_mean, std_dev=0.5)
+    users_init, projects_init = generate_vectors(users_num, projects_num, dim, mean=embedding_mean, std_dev=0.5)
     data = generate_sythetic(user_embedding, project_embeddings, beta, other_project_importance,
-                             lambda_transform=lambda_transform, max_lifetime=500)
+                             default_lambda=default_lambda, lambda_transform=lambda_transform, max_lifetime=50000)
     print("data generated, |events| =", len(data))
     model_random = Model(dim, beta, eps, other_project_importance, lambda_transform=lambda_transform,
                    lambda_derivative=lambda_derivative, users_embeddings_prior=users_init,
@@ -158,8 +152,12 @@ def init_compare_test():
         print("|m1 - m2| = {}, |m1*c - s| = {}".format(np.linalg.norm(end_interaction2 - end_interaction1),
               np.linalg.norm(np.mean(start_interaction / end_interaction1) * end_interaction1 - start_interaction)))
         print()
-        model_random.fit(data, learning_rate, iter_num=1, verbose=False)
-        model_true.fit(data, learning_rate, iter_num=1, verbose=False)
+        model_random.fit(data, learning_rate, iter_num=inner_iter_num, verbose=False)
+        model_true.fit(data, learning_rate, iter_num=inner_iter_num, verbose=False)
+        for user_id in user_embedding:
+            print("user_id = {}, lambdas = {}".format(user_id,
+                  ", ".join(["({}, {})".format(pid, model_random.get_applicable(data).get_lambda(user_id, pid))
+                             for pid in project_embeddings])))
     end_interaction_random = interaction_matrix(model_random.user_embeddings, model_random.project_embeddings)
     end_interaction_true = interaction_matrix(model_true.user_embeddings, model_true.project_embeddings)
     print("|start - init| =", np.linalg.norm(start_interaction - init_interaction))
