@@ -14,6 +14,7 @@ from src.test.python.metrics import return_time_mae, item_recommendation_mae, un
 TOLOKA_FILENAME = "~/data/mlimlab/erc/datasets/toloka/toloka_2018_10_01_2018_11_01_salt_simple_merge"
 LASTFM_FILENAME = "~/data/mlimlab/erc/datasets/lastfm-dataset-1K/" \
                   "userid-timestamp-artid-artname-traid-traname_1M.tsv"
+# LASTFM_FILENAME = 'data/lastfm-dataset-1K/userid-timestamp-artid-artname-traid-traname_1M.tsv'
 
 
 def train(model, data, eval, learning_rate, iter_num, optimization_type="sgd", model_path_in=None, model_path_out=None,
@@ -100,6 +101,8 @@ def lastfm_test():
     train_ratio = 0.75
     users_num = 1000
     projects_num = 1000
+    iter_num = 100
+    learning_rate = 0.01
     top_items = False
     model_path_in = None
     model_path_out = None  # "saved_models/lastfm_1M_1k_3k_top_2.model"
@@ -115,11 +118,10 @@ def lastfm_test():
     X_tr, X_te = train_test_split(X, train_ratio)
     model = Model(dim, eps, beta, other_project_importance, lambda_transform=lambda_transform, lambda_derivative=lambda_derivative)
 
-    learning_rate = 0.02
     print("Params: dim={}, size={}, users_num={}, projects_num={}, lr={}"
           .format(dim, size, users_num, projects_num, learning_rate))
-    train(model, X_tr, X_te,learning_rate, iter_num=50, optimization_type="glove", samples_num=samples_num,
-                  model_path_in=model_path_in, model_path_out=model_path_out)
+    train(model, X_tr, X_te, learning_rate, iter_num=iter_num, optimization_type="glove", samples_num=samples_num,
+          model_path_in=model_path_in, model_path_out=model_path_out)
 
     # learning_rate = 0.001
     # model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate, iter_num=2,

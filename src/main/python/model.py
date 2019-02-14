@@ -392,7 +392,7 @@ class ModelDensity:
         tr_lam = self.lambda_transform(lam)
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            ans = np.log(tr_lam * np.exp(-tr_lam * (event.pr_delta)))
+            ans = np.log(tr_lam * np.exp(-tr_lam * event.pr_delta))
             if w and w[0].category == RuntimeWarning:
                 ans = 0
                 warnings.warn("in ll", RuntimeWarning)
