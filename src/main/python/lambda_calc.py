@@ -55,61 +55,6 @@ class LazyInteractionsCalculator(InteractionCalculator):
         return lambda project_id: self.get_interaction(user_id, project_id)
 
 
-class RowInteractionsCalculator(InteractionCalculator):
-    def __init__(self, user_embeddings, project_embeddings, projects_indexes, reversed_indexes):
-        super().__init__(user_embeddings, project_embeddings)
-        self.projects_indexes = projects_indexes
-        self.reversed_indexes = reversed_indexes
-        self.interactions = {user_id: (self.user_embeddings[user_id]
-                                       @ self.project_embeddings[self.projects_indexes[user_id]].T)
-                             for user_id in self.user_embeddings}
-
-    def get_interaction(self, user_id, project_id):
-        return self.interactions[user_id][self.reversed_indexes[user_id][project_id]]
-
-    def get_interaction_compressed(self, user_id, project_id_compressed):
-        return self.interactions[user_id][project_id_compressed]
-
-    def get_user_supplier(self, user_id):
-        user_row = self.interactions[user_id]
-        return lambda project_id: user_row[self.reversed_indexes[user_id][project_id]]
-
-    def get_user_supplier_compressed(self, user_id):
-        user_row = self.interactions[user_id]
-        return lambda project_id_compressed: user_row[project_id_compressed]
-
-
-class LazyRowInteractionsCalculator(InteractionCalculator):
-    def __init__(self, user_embeddings, project_embeddings, projects_indexes, reversed_indexes):
-        super().__init__(user_embeddings, project_embeddings)
-        self.projects_indexes = projects_indexes
-        self.reversed_indexes = reversed_indexes
-        self.interactions = {}
-
-    def _ensure_calculated(self, user_id):
-        if user_id not in self.interactions:
-            self.interactions[user_id] = self.user_embeddings[user_id] @ \
-                                         self.project_embeddings[self.projects_indexes[user_id]].T
-
-    def get_interaction(self, user_id, project_id):
-        self._ensure_calculated(user_id)
-        return self.interactions[user_id][self.reversed_indexes[user_id][project_id]]
-
-    def get_interaction_compressed(self, user_id, project_id_compressed):
-        self._ensure_calculated(user_id)
-        return self.interactions[user_id][project_id_compressed]
-
-    def get_user_supplier(self, user_id):
-        self._ensure_calculated(user_id)
-        user_row = self.interactions[user_id]
-        return lambda project_id: user_row[self.reversed_indexes[user_id][project_id]]
-
-    def get_user_supplier_compressed(self, user_id):
-        self._ensure_calculated(user_id)
-        user_row = self.interactions[user_id]
-        return lambda project_id_compressed: user_row[project_id_compressed]
-
-
 class UserLambda:
     def __init__(self, user_embedding, beta, other_project_importance, interactions_supplier,
                  default_lambda=0.1, lambda_confidence=10, derivative=False):

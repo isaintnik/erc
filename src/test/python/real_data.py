@@ -11,7 +11,7 @@ from src.main.python.data_preprocess.common import filter_data, train_test_split
 from src.test.python.metrics import return_time_mae, item_recommendation_mae, unseen_recommendation, \
     unseen_recommendation_random, print_metrics
 
-TOLOKA_FILENAME = "~/data/mlimlab/erc/datasets/toloka_2018_10_01_2018_11_01_salt_simple_merge"
+TOLOKA_FILENAME = "~/data/mlimlab/erc/datasets/toloka/toloka_2018_10_01_2018_11_01_salt_simple_merge"
 LASTFM_FILENAME = "~/data/mlimlab/erc/datasets/lastfm-dataset-1K/" \
                   "userid-timestamp-artid-artname-traid-traname_1M.tsv"
 
@@ -63,8 +63,8 @@ def toloka_test():
     size = 1000 * 1000
     samples_num = 10
     train_ratio = 0.75
-    users_num = 50
-    projects_num = None
+    users_num = 1000
+    projects_num = 3000
     top_items = True
     model_path_in = None
     model_path_out = None  # "saved_models/toloka_rand.model"
@@ -91,18 +91,20 @@ def toloka_test():
 
 
 def lastfm_test():
-    dim = 10
+    dim = 20
     beta = 0.001
     other_project_importance = 0.1
     eps = 1
-    size = 1 * 100 * 1000
+    size = 100 * 1000
     samples_num = 10
     train_ratio = 0.75
     users_num = 1000
-    projects_num = 3000
+    projects_num = 1000
     top_items = False
     model_path_in = None
-    model_path_out = "saved_models/lastfm_1M_1k_3k_top_2.model"
+    model_path_out = None  # "saved_models/lastfm_1M_1k_3k_top_2.model"
+    lambda_transform = abs
+    lambda_derivative = np.sign
 
     raw_data = lastfm_read_raw_data(LASTFM_FILENAME, size)
     X = lastfm_prepare_data(raw_data)
@@ -111,23 +113,23 @@ def lastfm_test():
     print("Users num:", len(X))
 
     X_tr, X_te = train_test_split(X, train_ratio)
-    model = ModelExpLambda(dim, eps, beta, other_project_importance)
+    model = Model(dim, eps, beta, other_project_importance, lambda_transform=lambda_transform, lambda_derivative=lambda_derivative)
+
+    learning_rate = 0.02
+    print("Params: dim={}, size={}, users_num={}, projects_num={}, lr={}"
+          .format(dim, size, users_num, projects_num, learning_rate))
+    train(model, X_tr, X_te,learning_rate, iter_num=50, optimization_type="glove", samples_num=samples_num,
+                  model_path_in=model_path_in, model_path_out=model_path_out)
 
     # learning_rate = 0.001
     # model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate, iter_num=2,
     #               optimization_type="glove", model_path_in=model_path_in, model_path_out=model_path_out)
-
-    learning_rate = 20
-    print("Params: dim={}, size={}, users_num={}, projects_num={}, lr={}"
-          .format(dim, size, users_num, projects_num, learning_rate))
-    train(model, X_tr, X_te,learning_rate, iter_num=50, optimization_type="sgd", samples_num=samples_num,
-                  model_path_in=model_path_in, model_path_out=model_path_out)
 
 
 if __name__ == "__main__":
     np.random.seed(3)
     random.seed(3)
     start_time = time.time()
-    toloka_test()
-    # lastfm_test()
+    #toloka_test()
+    lastfm_test()
     print("time:", time.time() - start_time)

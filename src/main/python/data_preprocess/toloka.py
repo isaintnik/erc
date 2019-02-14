@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 
 from src.main.python.model import Event
 
@@ -29,10 +30,16 @@ def toloka_prepare_data(data):
     users_set = set()
     projects_set = set()
     last_time_done = {}
+    pr_deltas = []
     for row in data.itertuples():
         session = toloka_raw_to_session(row, last_time_done)
         users_set.add(session.uid)
         projects_set.add(session.pid)
         events.append(session)
+        if session.pr_delta is not None:
+            pr_deltas.append(session.pr_delta)
+    pr_deltas = np.array(pr_deltas)
     print("Read |Events| = {}, |users| = {}, |projects| = {}".format(len(events), len(users_set), len(projects_set)))
+    print("Mean pr_delta = {}, std = {}".format(np.mean(pr_deltas), np.std(pr_deltas)))
+    print("MAE = {}".format(np.mean(np.abs(pr_deltas - np.mean(pr_deltas)))))
     return events

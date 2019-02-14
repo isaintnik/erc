@@ -49,4 +49,5 @@ def lastfm_prepare_data(data):
     pr_deltas = np.array(pr_deltas)
     print("Read |Events| = {}, |users| = {}, |projects| = {}".format(len(events), len(users_set), len(projects_set)))
     print("Mean pr_delta = {}, std = {}".format(np.mean(pr_deltas), np.std(pr_deltas)))
+    print("MAE = {}".format(np.mean(np.abs(pr_deltas - np.mean(pr_deltas)))))
     return events

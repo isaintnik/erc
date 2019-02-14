@@ -37,7 +37,7 @@ class Model:
         if optim_type == "sgd":
             self._sgd_optimization(data, learning_rate, iter_num, eval, verbose)
         else:
-            self._glove_like_optimisation(data, iter_num, eval, verbose)
+            self._glove_like_optimisation(data, learning_rate, iter_num, eval, verbose)
 
     def get_applicable(self, data):
         return ApplicableModel(self.user_embeddings, self.project_embeddings, self.beta,
@@ -75,7 +75,7 @@ class Model:
         done_projects = {user_id: set() for user_id in self.user_ids}
         last_times_events = set()
         interaction_calculator = LazyInteractionsCalculator(self.user_embeddings, self.project_embeddings)
-        lambdas_by_project = UserProjectLambdaManagerLookAhead(
+        lambdas_by_project = UserProjectLambdaManagerNotLookAhead(
             self.user_embeddings, self.project_embeddings, interaction_calculator, self.beta,
             self.other_project_importance, self.default_lambda, self.lambda_confidence, derivative, accum=True)
         for event in events:
