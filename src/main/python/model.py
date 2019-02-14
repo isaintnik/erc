@@ -145,8 +145,7 @@ class Model:
     def _update_glove_event_params(self, event, lambdas_by_project, users_diffs_squares,
                                    projects_diffs_squares, discount_decay, lr):
         lam, lam_user_d, lam_projects_d = lambdas_by_project.get(event.uid, event.pid)
-        # lam, lam_user_d, lam_projects_d = user_lambda.get(user_event.pid, accum=False)
-        tr_lam = lam ** 2
+        tr_lam = self.lambda_transform(lam)
         tau = event.pr_delta
         exp_plus = np.exp(-tr_lam * (tau + self.eps))
         exp_minus = np.exp(-tr_lam * max(0, tau - self.eps))
@@ -168,13 +167,13 @@ class Model:
     def _update_glove_last_params(self, event, lambdas_by_project, users_diffs_squares,
                                   projects_diffs_squares, discount_decay, lr):
         # update in the end
-        # lam, lam_user_d, lam_projects_d = user_lambda.get(user_event.pid, accum=False)
         lam, lam_user_d, lam_projects_d = lambdas_by_project.get(event.uid, event.pid)
-        user_diff = 2 * lam * event.pr_delta * lam_user_d
+        lam_der = self.lambda_derivative(lam)
+        user_diff = lam_der * event.pr_delta * lam_user_d
         users_diffs_squares[event.uid] = discount_decay * users_diffs_squares[event.uid] + user_diff * user_diff
         self.user_embeddings[event.uid] -= user_diff * lr / np.sqrt(users_diffs_squares[event.uid])
         for project_id in lam_projects_d:
-            project_diff = 2 * lam * event.pr_delta * lam_projects_d[project_id]
+            project_diff = lam_der * event.pr_delta * lam_projects_d[project_id]
             projects_diffs_squares[project_id] = discount_decay * projects_diffs_squares[
                 project_id] + project_diff * project_diff
             self.project_embeddings[project_id] -= project_diff * lr / np.sqrt(projects_diffs_squares[project_id])
