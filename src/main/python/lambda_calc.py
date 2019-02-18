@@ -65,12 +65,11 @@ class UserLambda:
         self.user_embedding = user_embedding
         self.interactions_supplier = interactions_supplier
         self.avg_time_between_events = 1
-        self.numerator = default_lambda * lambda_confidence
-        self.denominator = lambda_confidence
-        self.user_d_numerator = np.zeros_like(user_embedding)
-        self.num_denom_by_project = np.zeros((1, 2))
-        self.user_d_numerators_by_project = np.zeros((1, self.dim))
-        self.project_d_numerator_by_project = np.zeros((1, self.dim))
+        self.event_sum = default_lambda * lambda_confidence
+        self.user_d_event_sums = np.zeros_like(user_embedding)
+        self.event_sums_by_project = np.zeros(1)
+        self.user_d_event_sums_by_project = np.zeros((1, self.dim))
+        self.project_d_event_sums_by_project = np.zeros((1, self.dim))
         self.projects_to_ind = {}
 
         self.last_user_derivative_numerator = np.zeros_like(user_embedding)
@@ -83,22 +82,23 @@ class UserLambda:
         if event.pid not in self.projects_to_ind:
             self.projects_to_ind[event.pid] = len(self.projects_to_ind)
             if len(self.projects_to_ind) != 1:
-                self.num_denom_by_project = np.vstack((self.num_denom_by_project, np.zeros((1, 2))))
-                self.user_d_numerators_by_project = np.vstack((self.user_d_numerators_by_project, np.zeros((1, self.dim))))
-                self.project_d_numerator_by_project = np.vstack((self.project_d_numerator_by_project, np.zeros((1, self.dim))))
+                self.event_sums_by_project = np.concatenate((self.event_sums_by_project, np.zeros(1)))
+                self.user_d_event_sums_by_project = np.vstack((self.user_d_event_sums_by_project, np.zeros((1, self.dim))))
+                self.project_d_event_sums_by_project = np.vstack((self.project_d_event_sums_by_project, np.zeros((1, self.dim))))
 
-        self.numerator = e * self.numerator + self.other_project_importance * ua * event.n_tasks
-        self.denominator = e * self.denominator + self.other_project_importance
-        self.user_d_numerator = e * self.user_d_numerator + self.other_project_importance * project_embedding * event.n_tasks
+        self.event_sum = e * self.event_sum + self.other_project_importance * ua * event.n_tasks
+        self.user_d_event_sums = e * self.user_d_event_sums + self.other_project_importance * project_embedding * event.n_tasks
 
-        self.num_denom_by_project *= e
-        self.user_d_numerators_by_project *= e
-        self.project_d_numerator_by_project *= e
+        self.event_sums_by_project *= e
+        self.user_d_event_sums_by_project *= e
+        self.project_d_event_sums_by_project *= e
 
-        self.num_denom_by_project[self.projects_to_ind[event.pid]][0] += (1 - self.other_project_importance) * ua * event.n_tasks
-        self.num_denom_by_project[self.projects_to_ind[event.pid]][1] += (1 - self.other_project_importance)
-        self.user_d_numerators_by_project[self.projects_to_ind[event.pid]] += (1 - self.other_project_importance) * project_embedding * event.n_tasks
-        self.project_d_numerator_by_project[self.projects_to_ind[event.pid]] += (1 - self.other_project_importance) * self.user_embedding * event.n_tasks
+        self.event_sums_by_project[self.projects_to_ind[event.pid]] += \
+            (1 - self.other_project_importance) * ua * event.n_tasks
+        self.user_d_event_sums_by_project[self.projects_to_ind[event.pid]] += \
+            (1 - self.other_project_importance) * project_embedding * event.n_tasks
+        self.project_d_event_sums_by_project[self.projects_to_ind[event.pid]] += \
+            (1 - self.other_project_importance) * self.user_embedding * event.n_tasks
 
         self.last_user_derivative_numerator = project_embedding * event.n_tasks
         self.last_project_derivative_numerator = {event.pid: self.user_embedding * event.n_tasks}
@@ -114,47 +114,41 @@ class UserLambda:
 
     def _get_lambda(self, project_id):
         if project_id not in self.projects_to_ind:
-            return self.numerator / self.denominator / self.avg_time_between_events
+            return self.event_sum / self.avg_time_between_events
         else:
-            return (self.numerator + self.num_denom_by_project[self.projects_to_ind[project_id]][0]) / (
-                    self.denominator + self.num_denom_by_project[self.projects_to_ind[project_id]][1]) / self.avg_time_between_events
+            return (self.event_sum + self.event_sums_by_project[self.projects_to_ind[project_id]]) / \
+                   self.avg_time_between_events
 
     def _get_accum_derivatives(self, project_id):
         if project_id not in self.projects_to_ind:
-            return self.numerator / self.denominator / self.avg_time_between_events, \
-                   np.zeros_like(self.user_embedding), {}
+            return self.event_sum / self.avg_time_between_events, np.zeros_like(self.user_embedding), {}
         else:
             project_derivatives = {}
-            denominator = self.denominator + self.num_denom_by_project[self.projects_to_ind[project_id]][1]
             for pid in self.projects_to_ind:
-                numerator = self.project_d_numerator_by_project[self.projects_to_ind[pid]].copy()
+                event_sum = self.project_d_event_sums_by_project[self.projects_to_ind[pid]].copy()
                 if pid == project_id:
-                    numerator += self.project_d_numerator_by_project[self.projects_to_ind[project_id]] / (
+                    event_sum += self.project_d_event_sums_by_project[self.projects_to_ind[project_id]] / (
                             1 - self.other_project_importance)
-                project_derivatives[pid] = numerator / denominator / self.avg_time_between_events
+                project_derivatives[pid] = event_sum / self.avg_time_between_events
 
-            return (self.numerator + self.num_denom_by_project[self.projects_to_ind[project_id]][0]) / (
-                    self.denominator + self.num_denom_by_project[self.projects_to_ind[project_id]][1]) / self.avg_time_between_events, \
-                   (self.user_d_numerator + self.user_d_numerators_by_project[self.projects_to_ind[project_id]]) / (
-                    self.denominator + self.num_denom_by_project[self.projects_to_ind[project_id]][1]) / self.avg_time_between_events, \
-                   project_derivatives
+            return (self.event_sum + self.event_sums_by_project[self.projects_to_ind[project_id]]) / \
+                   self.avg_time_between_events, \
+                   (self.user_d_event_sums + self.user_d_event_sums_by_project[self.projects_to_ind[project_id]]) / \
+                   self.avg_time_between_events, project_derivatives
 
     def _get_elem_derivatives(self, project_id):
         if project_id not in self.projects_to_ind:
-            return self.numerator / self.denominator / self.avg_time_between_events, \
+            return self.event_sum / self.avg_time_between_events, \
                    np.zeros_like(self.user_embedding), {}
         else:
             project_derivatives = {}
-            denominator = self.denominator + self.num_denom_by_project[self.projects_to_ind[project_id]][1]
             if project_id in self.last_project_derivative_numerator:
-                project_derivatives[project_id] = self.last_project_derivative_numerator[project_id].copy() \
-                                                  / denominator / self.avg_time_between_events
+                project_derivatives[project_id] = \
+                    self.last_project_derivative_numerator[project_id].copy() / self.avg_time_between_events
 
-            return (self.numerator + self.num_denom_by_project[self.projects_to_ind[project_id]][0]) / (
-                    self.denominator + self.num_denom_by_project[self.projects_to_ind[project_id]][1]) / self.avg_time_between_events, \
-                   self.last_user_derivative_numerator / (
-                           self.denominator + self.num_denom_by_project[self.projects_to_ind[project_id]][1]) / self.avg_time_between_events, \
-                   project_derivatives
+            return (self.event_sum + self.event_sums_by_project[self.projects_to_ind[project_id]]) / \
+                   self.avg_time_between_events, \
+                   self.last_user_derivative_numerator / self.avg_time_between_events, project_derivatives
 
 
 class UserProjectLambdaManager:
