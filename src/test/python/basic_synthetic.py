@@ -1,5 +1,5 @@
 import time
-from src.main.python.model import Model, ModelDensity, INVALID
+from src.main.python.model import Model
 from src.main.python.data_generator import *
 
 
@@ -9,8 +9,8 @@ def generate_vectors(users_num, projects_num, dim, mean=0.5, std_dev=0.2):
 
 
 def interaction_matrix(users, projects):
-    users_vecs = np.array([users[key] for key in sorted(list(users.keys()), key=lambda x: str(x)) if key != INVALID])
-    projects_vecs = np.array([projects[key] for key in sorted(list(projects.keys()), key=lambda x: str(x)) if key != INVALID])
+    users_vecs = np.array([users[key] for key in sorted(list(users.keys()), key=lambda x: str(x))])
+    projects_vecs = np.array([projects[key] for key in sorted(list(projects.keys()), key=lambda x: str(x))])
     return users_vecs @ projects_vecs.T
 
 
