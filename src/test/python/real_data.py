@@ -4,12 +4,11 @@ import time
 
 import numpy as np
 
-from src.main.python.model import Model, Model2Lambda, ModelExpLambda, ModelDensity
+from src.main.python.model import Model, ModelExpLambda
 from src.main.python.data_preprocess.toloka import toloka_read_raw_data, toloka_prepare_data
 from src.main.python.data_preprocess.lastfm import lastfm_read_raw_data, lastfm_prepare_data
 from src.main.python.data_preprocess.common import filter_data, train_test_split
-from src.test.python.metrics import return_time_mae, item_recommendation_mae, unseen_recommendation, \
-    unseen_recommendation_random, print_metrics
+from src.main.python.metrics import return_time_mae, item_recommendation_mae, unseen_recommendation
 
 TOLOKA_FILENAME = "~/data/mlimlab/erc/datasets/toloka/toloka_2018_10_01_2018_11_01_salt_simple_merge"
 LASTFM_FILENAME = "~/data/mlimlab/erc/datasets/lastfm-dataset-1K/" \
