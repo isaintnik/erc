@@ -61,36 +61,54 @@ def get_split_time(data, train_ratio):
     return np.percentile(np.array(start_times), train_ratio * 100)
 
 
+# def train_test_split(data, train_ratio):
+#     train, test = [], []
+#     data = sorted(data, key=lambda s: s.start_ts)
+#     split_time = get_split_time(data, train_ratio)
+#     active_time = {}
+#     seen_users = set()
+#     seen_projects = set()
+#     skipped_projects = set()
+#     for event in data:
+#         # it's wrong!
+#         # if event.uid not in seen_users and event.pid not in seen_projects and event.start_ts >= split_time:
+#         #     skipped_projects.add(event.pid)
+#         #     continue
+#         # seen_users.add(event.uid)
+#         # seen_projects.add(event.pid)
+#         if event.uid not in active_time:
+#             active_time[event.uid] = [np.inf, -np.inf]
+#         active_time[event.uid][0] = min(active_time[event.uid][0], event.start_ts)
+#         active_time[event.uid][1] = max(active_time[event.uid][1], event.start_ts)
+#
+#     for event in data:
+#         # it's wrong!
+#         # if event.uid not in seen_users and event.pid not in seen_projects and event.start_ts >= split_time:
+#         #     skipped_projects.add(event.pid)
+#         #     continue
+#         # seen_users.add(event.uid)
+#         # seen_projects.add(event.pid)
+#         if active_time[event.uid][0] < split_time:
+#             if event.start_ts < split_time:
+#                 train.append(event)
+#             else:
+#                 test.append(event)
+#     return train, test
+
+
 def train_test_split(data, train_ratio):
     train, test = [], []
     data = sorted(data, key=lambda s: s.start_ts)
     split_time = get_split_time(data, train_ratio)
-    active_time = {}
-    seen_users = set()
     seen_projects = set()
-    skipped_projects = set()
+    seen_users = set()
     for event in data:
-        # it's wrong!
-        # if event.uid not in seen_users and event.pid not in seen_projects and event.start_ts >= split_time:
-        #     skipped_projects.add(event.pid)
-        #     continue
-        # seen_users.add(event.uid)
-        # seen_projects.add(event.pid)
-        if event.uid not in active_time:
-            active_time[event.uid] = [np.inf, -np.inf]
-        active_time[event.uid][0] = min(active_time[event.uid][0], event.start_ts)
-        active_time[event.uid][1] = max(active_time[event.uid][1], event.start_ts)
-
-    for event in data:
-        # it's wrong!
-        # if event.uid not in seen_users and event.pid not in seen_projects and event.start_ts >= split_time:
-        #     skipped_projects.add(event.pid)
-        #     continue
-        # seen_users.add(event.uid)
-        # seen_projects.add(event.pid)
-        if active_time[event.uid][0] < split_time:
-            if event.start_ts < split_time:
-                train.append(event)
-            else:
-                test.append(event)
+        if event.start_ts > split_time and (event.pid not in seen_projects or event.uid not in seen_users):
+            continue
+        seen_projects.add(event.pid)
+        seen_users.add(event.uid)
+        if event.start_ts < split_time:
+            train.append(event)
+        else:
+            test.append(event)
     return train, test

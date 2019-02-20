@@ -2,13 +2,13 @@ import math
 import random
 
 
-def return_time_mae(model, events, samples_num=10):
+def return_time_mae(model, events):
     errors = 0.
     count = 0
     for event in events:
         if event.pr_delta is not None and not math.isnan(event.pr_delta) and event.n_tasks > 0:
             count += 1
-            expected_return_time = model.time_delta(event.uid, event.pid, samples_num)
+            expected_return_time = model.time_delta(event.uid, event.pid)
             # expected_return_time = 0
             errors += abs(expected_return_time - event.pr_delta)
             model.accept(event)
@@ -116,7 +116,7 @@ def unseen_recommendation_random(model, train, test, top=1):
 
 
 def print_metrics(model, train_data, test_data, samples_num=10):
-    return_time = return_time_mae(model.get_applicable(train_data), test_data, samples_num=samples_num)
+    return_time = return_time_mae(model.get_applicable(train_data), test_data)
     recommend_mae = item_recommendation_mae(model.get_applicable(train_data), test_data)
     unseen_rec = unseen_recommendation(model.get_applicable(train_data), train=train_data, test=test_data, top=1)
     unseen_rec_5 = unseen_recommendation(model.get_applicable(train_data), train=train_data, test=test_data, top=5)

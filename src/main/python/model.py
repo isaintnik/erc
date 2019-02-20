@@ -21,8 +21,8 @@ class Model:
         self.lambda_transform = lambda_transform
         self.lambda_derivative = lambda_derivative
         self.lambda_strategy_constructor = lambda_strategy_constructor
-        self.user_embeddings = users_embeddings_prior if users_embeddings_prior else users_embeddings_prior
-        self.project_embeddings = projects_embeddings_prior if users_embeddings_prior else None
+        self.user_embeddings = users_embeddings_prior
+        self.project_embeddings = projects_embeddings_prior
         self.data_inited = False
 
     def log_likelihood(self, events):
@@ -46,13 +46,16 @@ class Model:
         self.data_size = len(events)
         self.user_ids = set(event.uid for event in events)
         self.project_ids = set(event.pid for event in events)
-        self.user_embeddings = {user_id: np.abs(np.random.normal(0.1, 0.1, self.emb_dim))
+        pr_delta_mean = np.mean(np.array([event.pr_delta for event in events if event.pr_delta is not None]))
+        emb_mean = (1 / pr_delta_mean) ** 0.5 / self.emb_dim
+        print("Embedding mean =", emb_mean)
+        self.user_embeddings = {user_id: np.abs(np.random.normal(emb_mean, emb_mean / 2, self.emb_dim))
                                 for user_id in self.user_ids} \
             if self.user_embeddings is None else self.user_embeddings
         if self.project_embeddings is None:
-            self.project_embeddings = {pid: np.abs(np.random.normal(0.1, 0.1, self.emb_dim)) for pid in
+            self.project_embeddings = {pid: np.abs(np.random.normal(emb_mean, emb_mean / 2, self.emb_dim)) for pid in
                                        self.project_ids}
-        # self._update_default_embeddings()
+        self.data_inited = True
 
     def _likelihood_derivative(self, events, derivative=False):
         if not self.data_inited:

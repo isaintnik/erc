@@ -1,4 +1,6 @@
 import time
+
+from src.main.python.lambda_strategy import NotLookAheadLambdaStrategy
 from src.main.python.model import Model
 from src.main.python.data_generator import *
 
@@ -115,14 +117,6 @@ def synthetic_test():
     print(end_interaction)
 
 
-def relu(x):
-    return x if x > 0 else 0
-
-
-def relu_d(x):
-    return 1 if x > 0 else 0
-
-
 def init_compare_test():
     users_num = 2
     projects_num = 2
@@ -130,30 +124,27 @@ def init_compare_test():
     beta = 0.001
     eps = 1
     other_project_importance = 0.1
-    embedding_mean = 0.2
-    std_dev = 0.3
-    default_lambda = embedding_mean ** 2
-    # lambda_transform = lambda x: x ** 2
-    # lambda_derivative = lambda x: 2 * x
-    # lambda_transform = relu
-    # lambda_derivative = relu_d
-    lambda_transform = abs
-    lambda_derivative = np.sign
-    learning_rate = 0.02
+    embedding_mean = 0.1
+    std_dev = 0.05
+    lambda_transform = lambda x: x ** 2
+    lambda_derivative = lambda x: 2 * x
+    lambda_strategy_constructor = NotLookAheadLambdaStrategy
+    learning_rate = 0.01
     inner_iter_num = 3
     outer_iter_num = 20
     user_embedding, project_embeddings = generate_vectors(users_num, projects_num, dim, mean=embedding_mean,
                                                           std_dev=std_dev)
     users_init, projects_init = generate_vectors(users_num, projects_num, dim, mean=embedding_mean, std_dev=std_dev)
     data = generate_sythetic(user_embedding, project_embeddings, beta, other_project_importance,
-                             default_lambda=default_lambda, lambda_transform=lambda_transform, max_lifetime=10000)
+                             lambda_transform=lambda_transform, lambda_strategy_constructor=lambda_strategy_constructor,
+                             max_lifetime=1700)
     print("data generated, |events| =", len(data))
     model_random = Model(dim, beta, eps, other_project_importance, lambda_transform=lambda_transform,
-                   lambda_derivative=lambda_derivative, users_embeddings_prior=users_init,
-                   projects_embeddings_prior=projects_init)
+                         lambda_derivative=lambda_derivative, lambda_strategy_constructor=lambda_strategy_constructor,
+                         users_embeddings_prior=users_init, projects_embeddings_prior=projects_init)
     model_true = Model(dim, beta, eps, other_project_importance, lambda_transform=lambda_transform,
-                   lambda_derivative=lambda_derivative, users_embeddings_prior=user_embedding,
-                   projects_embeddings_prior=project_embeddings)
+                       lambda_derivative=lambda_derivative, lambda_strategy_constructor=lambda_strategy_constructor,
+                       users_embeddings_prior=user_embedding, projects_embeddings_prior=project_embeddings)
     # print("start_ll_random = {}, start_ll_true = {}".format(model_random.log_likelihood(data),
     #                                                         model_true.log_likelihood(data)))
     start_interaction = interaction_matrix(user_embedding, project_embeddings)
