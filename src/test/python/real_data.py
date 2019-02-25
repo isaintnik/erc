@@ -10,7 +10,7 @@ from src.main.python.data_preprocess.lastfm import lastfm_read_raw_data, lastfm_
 from src.main.python.data_preprocess.common import filter_data, train_test_split
 from src.main.python.lambda_strategy import NotLookAheadLambdaStrategy
 from src.main.python.metrics import return_time_mae, item_recommendation_mae, unseen_recommendation
-from src.main.python.model import Model
+from src.main.python.model import Model, reduplicate
 
 TOLOKA_FILENAME = "~/data/mlimlab/erc/datasets/toloka/toloka_2018_10_01_2018_11_01_salt_simple_merge"
 LASTFM_FILENAME = "~/data/mlimlab/erc/datasets/lastfm-dataset-1K/" \
@@ -95,11 +95,15 @@ def toloka_test():
     # print_metrics(model, X_te, X_tr=X_tr, samples_num=samples_num)
 
 
-def reduplicate(x):
-    return x * 2
+def make_data(data_path, size, users_num, projects_num, top_items, train_ratio):
+    raw_data = lastfm_read_raw_data(data_path, size)
+    X = lastfm_prepare_data(raw_data)
+    print("Raw events num:", raw_data.shape)
+    X = filter_data(X, top=top_items, users_num=users_num, projects_num=projects_num)
+    return train_test_split(X, train_ratio)
 
 
-def lastfm_test(data, model_load_path, model_save_path, iter_num):
+def lastfm_test(data_path, model_load_path, model_save_path, iter_num):
     dim = 10
     beta = 0.1
     other_project_importance = 0.1
@@ -116,12 +120,7 @@ def lastfm_test(data, model_load_path, model_save_path, iter_num):
     lambda_transform = np.square
     lambda_derivative = reduplicate
 
-    raw_data = lastfm_read_raw_data(data, size)
-    X = lastfm_prepare_data(raw_data)
-    print("Raw events num:", raw_data.shape)
-    X = filter_data(X, top=top_items, users_num=users_num, projects_num=projects_num)
-
-    X_tr, X_te = train_test_split(X, train_ratio)
+    X_tr, X_te = make_data(data_path, size, users_num, projects_num, top_items, train_ratio)
 
     if model_load_path is not None:
         try:
@@ -145,8 +144,8 @@ def lastfm_test(data, model_load_path, model_save_path, iter_num):
 if __name__ == "__main__":
     argument_parser = argparse.ArgumentParser()
     argument_parser.add_argument('--data', default=LASTFM_FILENAME)
-    argument_parser.add_argument('--model_load_path', default=None)
-    argument_parser.add_argument('--model_save_path', default=None)
+    argument_parser.add_argument('--model_load', default=None)
+    argument_parser.add_argument('--model_save', default=None)
     argument_parser.add_argument('--iterations', default=50, type=int)
     args = argument_parser.parse_args()
 
@@ -154,5 +153,5 @@ if __name__ == "__main__":
     random.seed(3)
     start_time = time.time()
     #toloka_test()
-    lastfm_test(args.data, args.model_load_path, args.model_save_path, args.iterations)
+    lastfm_test(args.data, args.model_load, args.model_save, args.iterations)
     print("time:", time.time() - start_time)
