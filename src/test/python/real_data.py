@@ -1,6 +1,7 @@
 import pickle
 import random
 import time
+import argparse
 
 import numpy as np
 
@@ -94,7 +95,11 @@ def toloka_test():
     # print_metrics(model, X_te, X_tr=X_tr, samples_num=samples_num)
 
 
-def lastfm_test():
+def reduplicate(x):
+    return x * 2
+
+
+def lastfm_test(data, model_load_path, model_save_path, iter_num):
     dim = 10
     beta = 0.1
     other_project_importance = 0.1
@@ -105,15 +110,13 @@ def lastfm_test():
     users_num = 1000
     projects_num = 1000
     optimization_type = "sgd"
-    iter_num = 50
-    learning_rate = 0.003
+    # iter_num = 50
+    learning_rate = 1e-5
     top_items = True
-    model_path_in = None
-    model_path_out = None  # "saved_models/lastfm_1M_1k_3k_top_2.model"
-    lambda_transform = lambda x: x ** 2
-    lambda_derivative = lambda x: 2 * x
+    lambda_transform = np.square
+    lambda_derivative = reduplicate
 
-    raw_data = lastfm_read_raw_data(LASTFM_FILENAME, size)
+    raw_data = lastfm_read_raw_data(data, size)
     X = lastfm_prepare_data(raw_data)
     print("Raw events num:", raw_data.shape)
     X = filter_data(X, top=top_items, users_num=users_num, projects_num=projects_num)
@@ -126,17 +129,20 @@ def lastfm_test():
     print("Params: dim={}, size={}, users_num={}, projects_num={}, lr={}"
           .format(dim, size, users_num, projects_num, learning_rate))
     train(model, X_tr, X_te, learning_rate, iter_num=iter_num, optimization_type=optimization_type,
-          model_path_in=model_path_in, model_path_out=model_path_out)
-
-    # learning_rate = 0.001
-    # model = train(model, X_tr, X_te, dim, beta, other_project_importance, learning_rate, iter_num=2,
-    #               optimization_type="glove", model_path_in=model_path_in, model_path_out=model_path_out)
+          model_path_in=model_load_path, model_path_out=model_save_path)
 
 
 if __name__ == "__main__":
+    argument_parser = argparse.ArgumentParser()
+    argument_parser.add_argument('--data', default=LASTFM_FILENAME)
+    argument_parser.add_argument('--model_load_path', default=None)
+    argument_parser.add_argument('--model_save_path', default=None)
+    argument_parser.add_argument('--iterations', default=50, type=int)
+    args = argument_parser.parse_args()
+
     np.random.seed(3)
     random.seed(3)
     start_time = time.time()
     #toloka_test()
-    lastfm_test()
+    lastfm_test(args.data, args.model_load_path, args.model_save_path, args.iterations)
     print("time:", time.time() - start_time)
