@@ -41,7 +41,11 @@ class LookAheadLambdaStrategy(LambdaStrategy):
         return self.user_lambdas[user_id].get_lambda_project_derivative(project_id)
 
     def accept(self, event):
-        self.user_lambdas[event.uid].update(event.pid)
+        time_delta = 0
+        if event.start_ts is not None and event.uid in self.prev_user_action_time:
+            time_delta = event.start_ts - self.prev_user_action_time[event.uid]
+        self.user_lambdas[event.uid].update(event.pid, time_delta)
+        self.prev_user_action_time[event.uid] = event.start_ts
 
 
 class NotLookAheadLambdaStrategy(LambdaStrategy):
@@ -71,9 +75,13 @@ class NotLookAheadLambdaStrategy(LambdaStrategy):
     def accept(self, event):
         user_id = event.uid
         project_id = event.pid
-        self.user_lambdas[user_id].update(project_id)
+        time_delta = 0
+        if event.start_ts is not None and event.uid in self.prev_user_action_time:
+            time_delta = event.start_ts - self.prev_user_action_time[event.uid]
+        self.user_lambdas[user_id].update(project_id, time_delta)
         self.saved_lambdas[user_id][project_id] = self.user_lambdas[user_id].get_lambda(project_id)
         self.saved_lambdas_user_derivative[user_id][project_id] = \
             self.user_lambdas[user_id].get_lambda_user_derivative(project_id)
         self.saved_lambdas_project_derivative[user_id][project_id] = \
             self.user_lambdas[user_id].get_lambda_project_derivative(project_id)
+        self.prev_user_action_time[user_id] = event.start_ts
