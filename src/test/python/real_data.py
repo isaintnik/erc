@@ -27,7 +27,7 @@ def train(model, data, eval, learning_rate, iter_num, optimization_type="sgd", m
                 print('Model loaded')
                 loaded = True
         except FileNotFoundError:
-            print('Model not found, a new one was created')
+            print('Model file not found')
     if model is None and not loaded:
         raise AttributeError("model is not provided")
 
@@ -111,7 +111,7 @@ def lastfm_test(data, model_load_path, model_save_path, iter_num):
     projects_num = 1000
     optimization_type = "sgd"
     # iter_num = 50
-    learning_rate = 1e-5
+    learning_rate = 1e-4
     top_items = True
     lambda_transform = np.square
     lambda_derivative = reduplicate
@@ -122,9 +122,19 @@ def lastfm_test(data, model_load_path, model_save_path, iter_num):
     X = filter_data(X, top=top_items, users_num=users_num, projects_num=projects_num)
 
     X_tr, X_te = train_test_split(X, train_ratio)
-    model = Model(dim=dim, eps=eps, beta=beta, other_project_importance=other_project_importance,
-                  lambda_transform=lambda_transform, lambda_derivative=lambda_derivative,
-                  lambda_strategy_constructor=lambda_strategy_constructor)
+
+    if model_load_path is not None:
+        try:
+            with open(model_load_path, 'rb') as model_file:
+                model = pickle.load(model_file)
+                print('Model loaded')
+        except FileNotFoundError:
+            print('Model file not found')
+            return
+    else:
+        model = Model(dim=dim, eps=eps, beta=beta, other_project_importance=other_project_importance,
+                      lambda_transform=lambda_transform, lambda_derivative=lambda_derivative,
+                      lambda_strategy_constructor=lambda_strategy_constructor)
 
     print("Params: dim={}, size={}, users_num={}, projects_num={}, lr={}"
           .format(dim, size, users_num, projects_num, learning_rate))
