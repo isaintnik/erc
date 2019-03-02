@@ -1,4 +1,4 @@
-from src.main.python.user_lambda import UserLambda, INVALID
+from src.main.python.user_lambda import UserLambda
 
 
 class LambdaStrategy:

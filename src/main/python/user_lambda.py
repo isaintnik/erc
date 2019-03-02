@@ -1,7 +1,5 @@
 import numpy as np
 
-INVALID = "INVALID"
-
 
 class InteractionCalculator:
     def __init__(self, user_embeddings, project_embeddings):
