@@ -1,5 +1,6 @@
 import math
 import random
+import numpy as np
 
 
 def return_time_mae(model, events):
@@ -30,6 +31,18 @@ def item_recommendation_mae(model, events):
             count += 1
 
             model.accept(event)
+    return errors / count
+
+
+def constant_prediction_time_mae(train, test):
+    pr_deltas = np.array([event.pr_delta for event in train if event.pr_delta is not None and event.n_tasks != 0])
+    expected_return_time = np.mean(pr_deltas)
+    errors = 0.
+    count = 0
+    for event in test:
+        if event.pr_delta is not None and not math.isnan(event.pr_delta) and event.n_tasks > 0:
+            count += 1
+            errors += abs(expected_return_time - event.pr_delta)
     return errors / count
 
 
@@ -118,7 +131,8 @@ def unseen_recommendation_random(model, train, test, top=1):
 def print_metrics(model, train_data, test_data, samples_num=10):
     return_time = return_time_mae(model.get_applicable(train_data), test_data)
     recommend_mae = item_recommendation_mae(model.get_applicable(train_data), test_data)
-    unseen_rec = unseen_recommendation(model.get_applicable(train_data), train=train_data, test=test_data, top=1)
-    unseen_rec_5 = unseen_recommendation(model.get_applicable(train_data), train=train_data, test=test_data, top=5)
-    print("return_time = {}, recommendation_mae = {}, unseen_rec = {}, unseen_rec@5 = {}".format(
-        return_time, recommend_mae, unseen_rec, unseen_rec_5))
+    # unseen_rec = unseen_recommendation(model.get_applicable(train_data), train=train_data, test=test_data, top=1)
+    # unseen_rec_5 = unseen_recommendation(model.get_applicable(train_data), train=train_data, test=test_data, top=5)
+    # print("return_time = {}, recommendation_mae = {}, unseen_rec = {}, unseen_rec@5 = {}".format(
+    #     return_time, recommend_mae, unseen_rec, unseen_rec_5))
+    print(f"return_time = {return_time}, recommendation_mae = {recommend_mae}")
