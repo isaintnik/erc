@@ -91,14 +91,14 @@ def toloka_test():
 
 
 def lastfm_test(data_path, model_load_path, model_save_path, iter_num):
-    dim = 5
+    dim = 10
     beta = 0.1
     other_project_importance = 0.1
     eps = 1
     lambda_strategy_constructor = NotLookAheadLambdaStrategy
-    size = 20 * 1000
+    size = 100 * 1000
     train_ratio = 0.75
-    users_num = 1
+    users_num = 1000
     projects_num = 1000
     optimization_type = "sgd"
     # iter_num = 50
@@ -126,8 +126,8 @@ def lastfm_test(data_path, model_load_path, model_save_path, iter_num):
                       lambda_transform=lambda_transform, lambda_derivative=lambda_derivative,
                       lambda_strategy_constructor=lambda_strategy_constructor)
 
-    print("Params: dim={}, size={}, users_num={}, projects_num={}, lr={}"
-          .format(dim, size, users_num, projects_num, learning_rate))
+    print("Params: dim={}, size={}, users_num={}, projects_num={}, lr={}, beta={}"
+          .format(dim, size, users_num, projects_num, learning_rate, beta))
     train(model, X_tr, X_te, learning_rate, iter_num=iter_num, optimization_type=optimization_type,
           model_path_in=model_load_path, model_path_out=model_save_path)
 
