@@ -128,11 +128,9 @@ def unseen_recommendation_random(model, train, test, top=1):
     return match / (count - skipped)
 
 
-def print_metrics(model, train_data, test_data, samples_num=10):
-    return_time = return_time_mae(model.get_applicable(train_data), test_data)
+def print_metrics(model, train_data, test_data):
+    test_return_time = return_time_mae(model.get_applicable(train_data), test_data)
+    train_return_time = return_time_mae(model.get_applicable(), train_data)
     recommend_mae = item_recommendation_mae(model.get_applicable(train_data), test_data)
-    # unseen_rec = unseen_recommendation(model.get_applicable(train_data), train=train_data, test=test_data, top=1)
-    # unseen_rec_5 = unseen_recommendation(model.get_applicable(train_data), train=train_data, test=test_data, top=5)
-    # print("return_time = {}, recommendation_mae = {}, unseen_rec = {}, unseen_rec@5 = {}".format(
-    #     return_time, recommend_mae, unseen_rec, unseen_rec_5))
-    print(f"return_time = {return_time}, recommendation_mae = {recommend_mae}")
+    print(f"test_return_time = {test_return_time}, train_return_time = {train_return_time}, "
+          f"recommendation_mae = {recommend_mae}")

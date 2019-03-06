@@ -14,7 +14,7 @@ class Model:
     def __init__(self, dim, beta, eps, other_project_importance, lambda_transform, lambda_derivative,
                  lambda_strategy_constructor, users_embeddings_prior=None, projects_embeddings_prior=None):
         self.emb_dim = dim
-        self.decay_rate = 1  # 0.95
+        self.decay_rate = 1  # 0.97
         self.beta = beta
         self.eps = eps
         self.other_project_importance = other_project_importance
@@ -37,10 +37,13 @@ class Model:
         else:
             self._glove_like_optimisation(data, learning_rate, iter_num, eval, verbose)
 
-    def get_applicable(self, data):
-        return ApplicableModel(self.user_embeddings, self.project_embeddings, self.beta,
-                               self.other_project_importance, lambda_transform=self.lambda_transform,
-                               lambda_strategy_constructor=self.lambda_strategy_constructor).fit(data)
+    def get_applicable(self, data=None):
+        model = ApplicableModel(self.user_embeddings, self.project_embeddings, self.beta,
+                                self.other_project_importance, lambda_transform=self.lambda_transform,
+                                lambda_strategy_constructor=self.lambda_strategy_constructor)
+        if data is not None:
+            model.fit(data)
+        return model
 
     def _init_data(self, events):
         self.data_size = len(events)
@@ -130,7 +133,7 @@ class Model:
             if verbose:
                 print("{}-th iter, ll = {}".format(optimization_iter, self.log_likelihood(data)))
                 if eval is not None:
-                    print_metrics(self, train_data=data, test_data=eval, samples_num=10)
+                    print_metrics(self, train_data=data, test_data=eval)
                 print()
 
     def _update_glove_event_params(self, event, lambdas_by_project, users_diffs_squares,
@@ -239,7 +242,7 @@ class Model:
             if verbose:
                 print("{}-th iter, ll = {}".format(i, self.log_likelihood(data)))
                 if eval is not None:
-                    print_metrics(self, train_data=data, test_data=eval, samples_num=10)
+                    print_metrics(self, train_data=data, test_data=eval)
                 print()
 
 

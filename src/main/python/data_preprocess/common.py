@@ -80,3 +80,23 @@ def train_test_split(data, train_ratio):
         else:
             test.append(event)
     return train, test
+
+
+def split_and_filter_data(data, train_ratio, top_items, users_num, projects_num):
+    X_tr, X_te = train_test_split(data, train_ratio)
+    selected_users, selected_projects = select_users_and_projects(X_tr, top=top_items, users_num=users_num,
+                                                                  projects_num=projects_num)
+    new_users = selected_users
+    new_projects = selected_projects
+    first = True
+    # X_tr = filter_data(X_tr, users=selected_users, projects=selected_projects)
+    while first or new_users != selected_users or new_projects != selected_projects:
+        first = False
+        X_tr = filter_data(X_tr, users=new_users, projects=new_projects)
+        X_te = filter_data(X_te, users=new_users, projects=new_projects)
+        selected_users = new_users
+        selected_projects = new_projects
+        new_users = set(e.uid for e in X_tr) & set(e.uid for e in X_te) & selected_users
+        new_projects = set(e.pid for e in X_tr) & set(e.pid for e in X_te) & selected_projects
+        print("iter of filtering")
+    return X_tr, X_te
