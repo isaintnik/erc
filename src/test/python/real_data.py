@@ -126,7 +126,7 @@ if __name__ == "__main__":
     argument_parser.add_argument('--data', default=LASTFM_FILENAME)
     argument_parser.add_argument('--model_load', default=None)
     argument_parser.add_argument('--model_save', default=None)
-    argument_parser.add_argument('--iterations', default=100, type=int)
+    argument_parser.add_argument('--iterations', default=10, type=int)
     args = argument_parser.parse_args()
 
     # np.random.seed(3)
