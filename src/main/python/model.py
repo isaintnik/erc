@@ -42,6 +42,8 @@ class Model:
                                 self.other_project_importance, lambda_transform=self.lambda_transform,
                                 lambda_strategy_constructor=self.lambda_strategy_constructor)
         if data is not None:
+            if not self.data_inited:
+                self._init_data(data)
             model.fit(data)
         return model
 

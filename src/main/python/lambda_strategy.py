@@ -3,11 +3,7 @@ from src.main.python.user_lambda import UserLambda
 
 class LambdaStrategy:
     def __init__(self, user_embeddings, project_embeddings, interaction_calculator, beta, other_project_importance):
-        self.user_embeddings = user_embeddings
-        self.project_embeddings = project_embeddings
         self.interaction_calculator = interaction_calculator
-        self.beta = beta
-        self.other_project_importance = other_project_importance
         self.prev_user_action_time = {}
         self.user_lambdas = {user_id: UserLambda(user_embeddings[user_id], project_embeddings, beta,
                                                  other_project_importance,

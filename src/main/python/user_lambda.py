@@ -103,7 +103,8 @@ class UserLambda:
     def get_lambda_user_derivative(self, project_id):
         if project_id not in self.user_derivative_by_project:
             return self.project_embeddings[project_id] + self.common_user_derivative
-        decay = self.current_time - self.last_time_of_projects[project_id]
+        # decay = self.current_time - self.last_time_of_projects[project_id]
+        decay = np.exp(-self.beta * (self.current_time - self.last_time_of_projects[project_id]))
         return self.project_embeddings[project_id] + self.common_user_derivative + \
                decay * self.user_derivative_by_project[project_id]
 
@@ -113,7 +114,8 @@ class UserLambda:
             derivative[pid] = self.common_project_derivative
         if project_id not in self.project_derivative_by_project:
             return derivative
-        decay = self.current_time - self.last_time_of_projects[project_id]
+        # decay = self.current_time - self.last_time_of_projects[project_id]
+        decay = np.exp(-self.beta * (self.current_time - self.last_time_of_projects[project_id]))
         derivative[project_id] += self.user_embedding + decay * self.project_derivative_by_project[project_id]
         return derivative
         # decay = self.num_of_events - self.last_time_of_projects[project_id]
